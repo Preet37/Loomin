@@ -1,62 +1,44 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
-import Editor from "@monaco-editor/react";
-import { Canvas, useFrame } from "@react-three/fiber";
-import { OrbitControls, Environment, Center, ContactShadows, Float, Text } from "@react-three/drei";
-import * as THREE from "three";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import dynamic from "next/dynamic";
+import Scene from "./editor/Scene";
+import JournalsNav from "./editor/components/JournalsNav";
+import { Leaf, Sparkles, BookOpen, AlertTriangle, Wrench, CheckCircle, PlayCircle, PauseCircle, Upload, Maximize2, Minimize2, FileUp } from "lucide-react";
+import UploadModal from "./editor/components/UploadModal";
+import { useLoominStore } from "./editor/store";
 
-// --- MATERIALS ---
-const materials = {
-  metal: new THREE.MeshStandardMaterial({ color: "#cbd5e1", metalness: 0.8, roughness: 0.2 }),
-  charred: new THREE.MeshStandardMaterial({ color: "#111", emissive: "#b91c1c", emissiveIntensity: 2 }),
-  gold: new THREE.MeshStandardMaterial({ color: "#fcd34d", metalness: 0.5, roughness: 0.2 }),
-  pcb: new THREE.MeshStandardMaterial({ color: "#064e3b", roughness: 0.3 })
-};
+const Monaco = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 
-// --- 3D COMPONENTS ---
-function WindTurbine({ status, vars }: { status: string, vars: any }) {
-  const ref = useRef<THREE.Group>(null);
-  const blades = vars?.blade_count || 3;
-  useFrame((_, delta) => { if(ref.current && status!=='CRITICAL_FAILURE') ref.current.rotation.z -= delta*2; });
-  return (
-      <group position={[0,-2,0]}>
-          <mesh position={[0,3,0]} material={materials.metal}><cylinderGeometry args={[0.2,0.5,6]} /></mesh>
-          <group position={[0,6,0.2]} ref={ref}>
-              <mesh rotation={[1.57,0,0]} material={materials.metal}><coneGeometry args={[0.5,0.8]} /></mesh>
-              {[...Array(blades)].map((_,i) => (
-                  <group key={i} rotation={[0,0,i/blades*6.28]}><mesh position={[0,2.5,0]} material={status==='CRITICAL_FAILURE'?materials.charred:materials.metal}><boxGeometry args={[0.4,5,0.1]} /></mesh></group>
-              ))}
-          </group>
-      </group>
-  );
-}
+// --- SMART PARSER: EXTRACTS VARIABLES FROM NATURAL TEXT ---
+function extractVariablesFromText(text: string) {
+  const out: any = {};
+  
+  // Regex to find "Wind Speed: 50" or "blade count = 5" anywhere in text
+  const patterns = [
+    { key: 'Wind_Speed', regex: /(?:wind\s*speed|velocity)[:\s=]+(\d+)/i },
+    { key: 'Blade_Count', regex: /(?:blade\s*count|number\s*of\s*blades)[:\s=]+(\d+)/i },
+    { key: 'Blade_Pitch', regex: /(?:blade\s*pitch|angle)[:\s=]+(\d+)/i },
+    { key: 'Yaw', regex: /(?:yaw|direction)[:\s=]+(\d+)/i },
+    { key: 'Scene_Mode', regex: /(?:scene|mode)[:\s=]+(\d+)/i },
+  ];
 
-function RobotArm({ status }: { status: string }) {
-   const ref = useRef<THREE.Group>(null);
-   useFrame((state) => { if (status!=='CRITICAL_FAILURE' && ref.current) ref.current.rotation.y = state.mouse.x * 0.5; });
-   return (
-     <group ref={ref} position={[0,-2,0]}>
-        <mesh material={materials.metal}><cylinderGeometry args={[1,1.2,0.5]} /></mesh>
-        <mesh position={[0,2,0]} material={status==='CRITICAL_FAILURE'?materials.charred:materials.metal}><boxGeometry args={[0.5,4,0.5]} /></mesh>
-     </group>
-   );
-}
+  patterns.forEach(({ key, regex }) => {
+    const match = text.match(regex);
+    if (match && match[1]) {
+      out[key] = Number(match[1]);
+    }
+  });
 
-function CircuitBoard({ status }: { status: string }) {
-  const isFried = status === 'CRITICAL_FAILURE';
-  return (
-    <group rotation={[Math.PI/4, Math.PI/4, 0]}>
-       <mesh material={materials.pcb}><boxGeometry args={[4, 0.1, 3]} /></mesh>
-       <group position={[0, 0.5, 0]}>
-          <mesh rotation={[0,0,Math.PI/2]}>
-             <cylinderGeometry args={[0.3, 0.3, 1.2, 32]} />
-             <meshStandardMaterial color={isFried ? "#111" : "#fcd34d"} emissive={isFried ? "#f00" : "#000"} emissiveIntensity={isFried?2:0} />
-          </mesh>
-          {isFried && <Text position={[0, 1, 0]} fontSize={0.5} color="red">FRIED</Text>}
-       </group>
-    </group>
-  );
+  // Fallback: Also capture standard "Var = Val" format at bottom of file
+  const standardRegex = /(?:^|\n)\s*([A-Za-z_]+)\s*=\s*(\d+)/g;
+  let m;
+  while ((m = standardRegex.exec(text)) !== null) {
+     out[m[1]] = Number(m[2]);
+  }
+
+  return out;
 }
 
 // --- FLASHCARD ENGINE ---
@@ -68,7 +50,7 @@ function FlashcardMode({ initialCards, onClose }: { initialCards: any[], onClose
   const [isFlipped, setIsFlipped] = useState(false);
   const [viewState, setViewState] = useState<'STUDYING' | 'SUMMARY' | 'VICTORY'>('STUDYING');
 
-  if (deck.length === 0) return null;
+  if (!deck || deck.length === 0) return null;
   const current = deck[index];
 
   const handleSwipe = (mastered: boolean) => {
@@ -95,12 +77,23 @@ function FlashcardMode({ initialCards, onClose }: { initialCards: any[], onClose
       setViewState('STUDYING');
   };
 
+  const restartFull = () => {
+      setDeck(initialCards);
+      setLearningQueue([]);
+      setMasteredCount(0);
+      setIndex(0);
+      setViewState('STUDYING');
+  };
+
   if (viewState === 'VICTORY') {
       return (
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/95 backdrop-blur-md">
             <div className="text-center p-8 bg-slate-900 border border-emerald-500 rounded-2xl shadow-2xl">
                 <h2 className="text-4xl font-bold text-emerald-400 mb-4">🎉 Deck Mastered!</h2>
-                <button onClick={onClose} className="w-full py-3 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-bold">Return to Notes</button>
+                <div className="flex gap-4 justify-center">
+                    <button onClick={restartFull} className="px-6 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg font-bold text-white transition-all">Restart</button>
+                    <button onClick={onClose} className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-bold text-white transition-all">Return to Notes</button>
+                </div>
             </div>
         </div>
       );
@@ -112,8 +105,8 @@ function FlashcardMode({ initialCards, onClose }: { initialCards: any[], onClose
             <div className="text-center p-8 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl">
                 <h2 className="text-2xl font-bold text-white mb-6">Round Complete</h2>
                 <p className="mb-4 text-slate-400">Mastered: {masteredCount} | Learning: {learningQueue.length}</p>
-                <button onClick={restartRound} className="w-full py-3 bg-white text-black hover:bg-gray-200 rounded-lg font-bold mb-3">Keep Learning ({learningQueue.length})</button>
-                <button onClick={onClose} className="w-full py-3 text-slate-400 hover:text-white">Exit</button>
+                <button onClick={restartRound} className="w-full py-3 bg-white text-black hover:bg-gray-200 rounded-lg font-bold mb-3 transition-all">Keep Learning ({learningQueue.length})</button>
+                <button onClick={onClose} className="w-full py-3 text-slate-400 hover:text-white transition-all">Exit</button>
             </div>
         </div>
       );
@@ -130,7 +123,7 @@ function FlashcardMode({ initialCards, onClose }: { initialCards: any[], onClose
            <div className={`relative w-full h-full duration-500 transition-transform ${isFlipped ? 'rotate-y-180' : ''}`} style={{ transformStyle: "preserve-3d", transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
               <div className="absolute inset-0 bg-slate-900 border-2 border-slate-700 rounded-2xl flex items-center justify-center p-8 text-center" style={{ backfaceVisibility: "hidden" }}>
                  <h3 className="text-2xl font-bold text-white">{current?.front}</h3>
-                 <p className="absolute bottom-4 text-xs text-slate-500 uppercase">Tap to Flip</p>
+                 <p className="absolute bottom-4 text-xs text-slate-500 uppercase tracking-widest">Tap to Flip</p>
               </div>
               <div className="absolute inset-0 bg-emerald-950 border-2 border-emerald-500/50 rounded-2xl flex items-center justify-center p-8 text-center" style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}>
                  <h3 className="text-xl font-medium text-emerald-100">{current?.back}</h3>
@@ -138,225 +131,538 @@ function FlashcardMode({ initialCards, onClose }: { initialCards: any[], onClose
            </div>
         </div>
         <div className="flex gap-4 mt-8 justify-center">
-           <button onClick={() => handleSwipe(false)} className="px-8 py-4 rounded-full bg-slate-800 text-slate-300 font-bold w-1/2">Still Learning</button>
-           <button onClick={() => handleSwipe(true)} className="px-8 py-4 rounded-full bg-emerald-600 text-white font-bold w-1/2">Mastered</button>
+           <button onClick={() => handleSwipe(false)} className="px-8 py-4 rounded-full bg-slate-800 text-slate-300 font-bold w-1/2 hover:bg-red-900/20 hover:text-red-200 transition-all border border-transparent hover:border-red-500/30">Still Learning</button>
+           <button onClick={() => handleSwipe(true)} className="px-8 py-4 rounded-full bg-emerald-600 text-white font-bold w-1/2 hover:bg-emerald-500 transition-all shadow-lg hover:shadow-emerald-500/20">Mastered</button>
         </div>
-        <button onClick={onClose} className="mt-8 text-slate-500 hover:text-white block mx-auto">Exit</button>
+        <button onClick={onClose} className="mt-8 text-slate-500 hover:text-white block mx-auto transition-colors">Exit Study Mode</button>
       </div>
     </div>
   );
 }
 
-// --- MAIN APP ---
-export default function Home() {
-  const [notes, setNotes] = useState<any[]>([]);
-  const [activeNote, setActiveNote] = useState<any>(null);
-  const [code, setCode] = useState("");
+// --- UTILS ---
+function debounce(fn: any, wait = 1000) {
+  let t: any;
+  return (...args: any) => {
+    clearTimeout(t);
+    t = setTimeout(() => fn(...args), wait);
+  };
+}
+
+
+// --- MAIN PAGE ---
+export default function Page() {
+  const updateFromStorage = useLoominStore((s: any) => s.updateFromStorage);
+  const journals = useLoominStore((s: any) => s.journals);
+  const activeId = useLoominStore((s: any) => s.activeId);
+  const setEditorValue = useLoominStore((s: any) => s.setEditorValue);
+  const setVars = useLoominStore((s: any) => s.setVars);
+
+  const [navOpen, setNavOpen] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
   
-  const [simData, setSimData] = useState<any>(null);
-  const [status, setStatus] = useState("OPTIMAL");
+  // AI & Sim State
+  const [simStatus, setSimStatus] = useState("OPTIMAL");
+  const [simMessage, setSimMessage] = useState("");
   const [recommendation, setRecommendation] = useState("");
   const [explanation, setExplanation] = useState("");
-  const [isSimEnabled, setIsSimEnabled] = useState(true);
-  
+  const [isAutoFixing, setIsAutoFixing] = useState(false);
   const [isAskOpen, setIsAskOpen] = useState(false);
   const [askPrompt, setAskPrompt] = useState("");
-  const [flashcards, setFlashcards] = useState<any[]>([]);
-  const [cardCount, setCardCount] = useState(5);
+  const [isSimEnabled, setIsSimEnabled] = useState(true);
+  
   const [isStudyMode, setIsStudyMode] = useState(false);
-  const [isAutoFixing, setIsAutoFixing] = useState(false);
+  const [flashcards, setFlashcards] = useState<any[]>([]);
   const [deckLoading, setDeckLoading] = useState(false);
+  const [cardCount, setCardCount] = useState(5);
+
+  // Video State - now synced per journal
+  const [isVideoAnalyzing, setIsVideoAnalyzing] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState(false);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const setVideo = useLoominStore((s: any) => s.setVideo);
+
+  const active = useMemo(() => journals.find((j: any) => j.id === activeId) || journals[0], [journals, activeId]);
+  const editorValue = active?.editorValue ?? "";
+  const vars = active?.vars ?? {};
+  const videoSrc = active?.videoSrc ?? null;
+
+  const debouncedRef = useRef<any>(null);
 
   useEffect(() => {
-    fetch('/api/notes').then(res => res.json()).then(data => {
-      setNotes(data);
-      if (data.length > 0) { setActiveNote(data[0]); setCode(data[0].content); }
-      else createNewNote();
-    });
-  }, []);
+    updateFromStorage();
+  }, [updateFromStorage]);
 
-  const createNewNote = async () => {
-    const res = await fetch('/api/notes', { method: 'POST', body: JSON.stringify({ title: "New Physics Note", content: "" }) });
-    const newNote = await res.json();
-    setNotes([newNote, ...notes]);
-    setActiveNote(newNote); setCode("");
+  // --- BRAIN: Simulation Engine ---
+  const runSimulation = async (code: string) => {
+    if (!isSimEnabled || !code || code.length < 5) return;
+    try {
+        const res = await fetch("/api/extract", { method: "POST", body: JSON.stringify({ notes: code }) });
+        const data = await res.json();
+        const sim = data.simulation || {};
+        const extraction = data.extraction || {};
+        
+        setSimStatus(sim.status || "OPTIMAL");
+        setSimMessage(sim.message || "");
+        setRecommendation(sim.recommendation || "");
+        setExplanation(sim.aiExplanation || "");
+
+        // --- SMART PARSER INTEGRATION ---
+        // Extract variables from natural text OR standard variables
+        const newVars = extractVariablesFromText(code);
+        
+        // Auto-Switch Scene based on detected topic
+        // Always set Scene_Mode when a valid topic is detected
+        if (extraction.topic === 'robot_arm') {
+            newVars.Scene_Mode = 1;
+        } else if (extraction.topic === 'wind_turbine') {
+            newVars.Scene_Mode = 0;
+        }
+
+        // Apply Extracted Vars to Partner's Store
+        setVars(newVars);
+
+    } catch (e) { console.error("Sim error", e); }
   };
 
-  const deleteNote = async (e: any, id: string) => {
-    e.stopPropagation();
-    await fetch('/api/notes', { method: 'DELETE', body: JSON.stringify({ id }) });
-    const remaining = notes.filter(n => n.id !== id);
-    setNotes(remaining);
-    if (activeNote?.id === id) {
-        if (remaining.length > 0) { setActiveNote(remaining[0]); setCode(remaining[0].content); }
-        else { createNewNote(); }
+  const onEditorChange = useMemo(() => {
+    const handler = (value: string | undefined) => {
+      const v = value ?? "";
+      // Instant Visual Update (Smart Parse)
+      const parsedVars = extractVariablesFromText(v);
+      setEditorValue(v);
+      setVars(parsedVars);
+      // Run Sim
+      runSimulation(v);
+    };
+    debouncedRef.current = debounce(handler, 1000); 
+    return (value: string | undefined) => {
+        const v = value ?? "";
+        setEditorValue(v); 
+        setVars(extractVariablesFromText(v)); // Immediate visual update
+        debouncedRef.current?.(v);
+    };
+  }, [setEditorValue, setVars, isSimEnabled]);
+
+  // --- SMART AUTO-FIX ---
+  // Updates existing parameters IN-PLACE with inline comments showing what changed
+  const handleAutoFix = () => {
+    setIsAutoFixing(true);
+    let updatedCode = editorValue;
+    const changes: string[] = [];
+    
+    // Parse recommendation for specific fixes
+    const windMatch = recommendation.match(/wind_speed.*?(\d+)/i);
+    const bladeMatch = recommendation.match(/blade_count.*?(\d+)/i);
+    const payloadMatch = recommendation.match(/payload.*?(\d+)/i);
+    
+    // Helper: Replace parameter in various formats with inline change comment
+    const replaceParam = (
+      code: string, 
+      patterns: RegExp[], 
+      newVal: string, 
+      paramName: string
+    ): { code: string; oldVal: string | null } => {
+      let oldVal: string | null = null;
+      let modified = code;
+      
+      for (const pattern of patterns) {
+        const match = code.match(pattern);
+        if (match) {
+          oldVal = match[1];
+          // Replace with new value and add change comment
+          modified = code.replace(pattern, `${paramName} = ${newVal}  // ✏️ changed from ${oldVal}`);
+          break;
+        }
+      }
+      
+      return { code: modified, oldVal };
+    };
+    
+    // Fix wind speed - match various formats
+    if (windMatch) {
+      const newVal = windMatch[1];
+      const windPatterns = [
+        /[Ww]ind[_\s]*[Ss]peed\s*=\s*(\d+)(?:\s*(?:mph|m\/s|kmh)?)?/,
+        /[Vv]elocity\s*=\s*(\d+)/,
+      ];
+      const result = replaceParam(updatedCode, windPatterns, newVal, 'Wind_Speed');
+      if (result.oldVal) {
+        updatedCode = result.code;
+        changes.push(`Wind_Speed: ${result.oldVal} → ${newVal} (safer for blade stress)`);
+      } else {
+        // No existing param found, add it
+        updatedCode += `\nWind_Speed = ${newVal}  // ✏️ added by auto-fix`;
+        changes.push(`Wind_Speed: added ${newVal}`);
+      }
     }
-  };
+    
+    // Fix blade count - match various formats
+    if (bladeMatch) {
+      const newVal = bladeMatch[1];
+      const bladePatterns = [
+        /[Bb]lade[_\s]*[Cc]ount\s*=\s*(\d+)/,
+        /[Nn]umber\s*of\s*[Bb]lades\s*=\s*(\d+)/,
+        /[Bb]lades\s*=\s*(\d+)/,
+      ];
+      const result = replaceParam(updatedCode, bladePatterns, newVal, 'Blade_Count');
+      if (result.oldVal) {
+        updatedCode = result.code;
+        changes.push(`Blade_Count: ${result.oldVal} → ${newVal} (reduces drag)`);
+      } else {
+        updatedCode += `\nBlade_Count = ${newVal}  // ✏️ added by auto-fix`;
+        changes.push(`Blade_Count: added ${newVal}`);
+      }
+    }
+    
+    // Fix payload
+    if (payloadMatch) {
+      const newVal = payloadMatch[1];
+      const payloadPatterns = [
+        /[Pp]ayload\s*=\s*(\d+)/,
+        /[Ww]eight\s*=\s*(\d+)/,
+        /[Ll]oad\s*=\s*(\d+)/,
+      ];
+      const result = replaceParam(updatedCode, payloadPatterns, newVal, 'Payload');
+      if (result.oldVal) {
+        updatedCode = result.code;
+        changes.push(`Payload: ${result.oldVal} → ${newVal} kg (within torque limit)`);
+      } else {
+        updatedCode += `\nPayload = ${newVal}  // ✏️ added by auto-fix`;
+        changes.push(`Payload: added ${newVal}`);
+      }
+    }
+    
+    // Add a brief fix summary at top (not a huge block)
+    const fixSummary = `// 🔧 AUTO-FIX: ${changes.join(' | ')}
+// 📚 Why: ${simMessage.substring(0, 80)}${simMessage.length > 80 ? '...' : ''}
 
-  const saveNote = async () => {
-    if (!activeNote) return;
-    // FIX: Generate title from first line of actual text
-    const title = code.split('\n').find(l => l.trim().length > 0)?.substring(0,25) || "Untitled Note";
-    await fetch('/api/notes', { method: 'POST', body: JSON.stringify({ id: activeNote.id, content: code, title }) });
-    setNotes(prev => prev.map(n => n.id === activeNote.id ? { ...n, title, content: code } : n));
+`;
+    
+    const finalCode = fixSummary + updatedCode;
+    
+    setEditorValue(finalCode);
+    setVars(extractVariablesFromText(finalCode));
+    runSimulation(finalCode);
+    
+    setTimeout(() => setIsAutoFixing(false), 800);
   };
 
   const handleAskLoomin = async () => {
     const promptHeader = `\n// ??? ASK LOOMIN: ${askPrompt}\n// -------------------------\n`;
     try {
-        const res = await fetch('/api/ask', { method: 'POST', body: JSON.stringify({ prompt: askPrompt, context: code }) });
+        const res = await fetch('/api/ask', { method: 'POST', body: JSON.stringify({ prompt: askPrompt, context: editorValue }) });
         const data = await res.json();
-        const newCode = promptHeader + data.result + "\n\n" + code;
-        setCode(newCode);
+        const newCode = promptHeader + data.result + "\n\n" + editorValue;
+        
+        setEditorValue(newCode);
+        setVars(extractVariablesFromText(newCode));
         setIsAskOpen(false); 
         setAskPrompt("");
-        // FIX: Force Sim Update immediately after AI writes
-        runSimulation(newCode); 
+        runSimulation(newCode);
     } catch(e) {}
   };
 
-  // FIX: Robust Auto-Fixer
-  const handleAutoFix = () => {
-    setIsAutoFixing(true);
-    let newCode = code;
-    
-    // 1. Apply Logic Fixes
-    if (recommendation.includes("wind_speed")) newCode = newCode.replace(/wind_speed\s*[:=]\s*\d+\s*(mph|m\/s)?/gi, "wind_speed = 45 mph");
-    if (recommendation.includes("blade_count")) newCode = newCode.replace(/blade_count\s*[:=]\s*\d+/gi, "blade_count = 3");
-    if (recommendation.includes("payload")) newCode = newCode.replace(/payload\s*[:=]\s*\d+\s*(kg|lbs)?/gi, "payload = 10 kg");
+  // --- VIDEO ANALYSIS ---
+  const handleVideoUpload = async (e: any) => {
+      const file = e.target.files[0];
+      if (file) {
+          const url = URL.createObjectURL(file);
+          setVideo(url); // Store in journal state
+          setIsVideoAnalyzing(true);
+          
+          try {
+              // Call the analyze_document API for real analysis
+              const formData = new FormData();
+              formData.append('file', file);
+              formData.append('fileName', file.name);
+              formData.append('fileType', 'video');
 
-    // 2. Add Timestamp to FORCE Cache Miss
-    const timeId = new Date().getTime().toString().slice(-4);
-    newCode += `\n\n// [AUTO-FIX APPLIED #${timeId}]: ${explanation.substring(0, 60)}...`;
-    
-    // 3. Update State & Run
-    setCode(newCode);
-    runSimulation(newCode); 
-    setTimeout(() => setIsAutoFixing(false), 800);
+              const response = await fetch('/api/analyze_document', {
+                  method: 'POST',
+                  body: formData,
+              });
+
+              const result = await response.json();
+              setIsVideoAnalyzing(false);
+
+              if (result.generatedNotes) {
+                  setEditorValue(result.generatedNotes);
+                  setVars(result.suggestedVars || {});
+                  runSimulation(result.generatedNotes);
+              }
+          } catch (err) {
+              console.error('Video analysis error:', err);
+              setIsVideoAnalyzing(false);
+              // Fallback to basic analysis
+              const analysisNote = `## 🎥 Video Analysis: ${file.name}
+
+### Overview
+Video uploaded for analysis. Add notes below to configure the simulation.
+
+---
+
+### Simulation Parameters
+Wind_Speed = 25
+Blade_Count = 3
+Scene_Mode = 0
+`;
+              setEditorValue(analysisNote);
+              setVars({ Wind_Speed: 25, Blade_Count: 3, Scene_Mode: 0 });
+              runSimulation(analysisNote);
+          }
+      }
   };
 
   const generateDeck = async () => {
     setDeckLoading(true);
-    const res = await fetch('/api/flashcards', { method: 'POST', body: JSON.stringify({ notes: code, count: cardCount }) });
+    const res = await fetch('/api/flashcards', { method: 'POST', body: JSON.stringify({ notes: editorValue, count: cardCount }) });
     const data = await res.json();
     setFlashcards(data.cards || []);
     setDeckLoading(false);
     setIsStudyMode(true);
   };
 
-  const runSimulation = async (noteContent: string) => {
-      if (!isSimEnabled || noteContent.length < 5) return;
-      try {
-        const res = await fetch("/api/extract", { method: "POST", body: JSON.stringify({ notes: noteContent }) });
-        const data = await res.json();
-        setSimData(data);
-        setStatus(data.simulation?.status || "OPTIMAL");
-        setRecommendation(data.simulation?.recommendation || "");
-        setExplanation(data.simulation?.aiExplanation || "");
-      } catch (e) {}
+  // Handle document upload completion
+  const handleUploadComplete = (result: any) => {
+    if (!result) return;
+    
+    // Set the generated notes in the editor
+    if (result.generatedNotes) {
+      setEditorValue(result.generatedNotes);
+      setVars(result.suggestedVars || {});
+      runSimulation(result.generatedNotes);
+    }
+    
+    // Set video if uploaded - stored per journal
+    if (result.videoUrl) {
+      setVideo(result.videoUrl);
+    }
   };
 
-  useEffect(() => {
-    const timer = setTimeout(() => runSimulation(code), 1500);
-    return () => clearTimeout(timer);
-  }, [code, isSimEnabled]);
-
-  const topic = simData?.extraction?.topic || 'wind_turbine';
-  const vars = simData?.extraction?.vars || {};
+  // Create new journal with upload prompt
+  const createJournalWithUpload = useLoominStore((s: any) => s.createJournal);
+  const handleNewJournal = () => {
+    createJournalWithUpload(`Journal ${journals.length + 1}`);
+    setShowUploadModal(true);
+  };
 
   return (
-    <main className="flex h-screen w-full bg-[#0f172a] text-white font-sans overflow-hidden relative">
-      
+    <div className="h-[100vh] overflow-hidden bg-[#070A0F] text-white selection:bg-white/20 font-sans">
+      <style>{`
+        .loomin-scroll{scrollbar-gutter:stable}
+        .loomin-scroll::-webkit-scrollbar{width:10px}
+        .loomin-scroll::-webkit-scrollbar-track{background:rgba(255,255,255,0.04);border-radius:999px}
+        .loomin-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.14);border:2px solid rgba(0,0,0,0);background-clip:padding-box;border-radius:999px}
+        .loomin-scroll::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.20);border:2px solid rgba(0,0,0,0);background-clip:padding-box}
+      `}</style>
+
       {isStudyMode && <FlashcardMode initialCards={flashcards} onClose={() => setIsStudyMode(false)} />}
+      
+      <UploadModal 
+        isOpen={showUploadModal} 
+        onClose={() => setShowUploadModal(false)} 
+        onComplete={handleUploadComplete}
+      />
 
-      <div className="w-64 bg-slate-950 border-r border-slate-800 flex flex-col shrink-0 z-20">
-        <div className="p-4 border-b border-slate-800 flex justify-between items-center">
-          <span className="font-bold text-slate-200">Notebooks</span>
-          <button onClick={createNewNote} className="text-xl text-blue-400 hover:text-blue-300">+</button>
-        </div>
-        <div className="flex-1 overflow-y-auto">
-          {notes.map(n => (
-            <div key={n.id} onClick={()=>{setActiveNote(n); setCode(n.content)}} className={`p-3 border-b border-slate-900 cursor-pointer flex justify-between group ${activeNote?.id===n.id?'bg-slate-900 border-l-2 border-blue-500':''}`}>
-               <p className="truncate text-sm text-slate-300 font-medium w-40">{n.title}</p>
-               <button onClick={(e) => deleteNote(e, n.id)} className="text-slate-600 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity">🗑️</button>
+      <div className="pointer-events-none fixed inset-0 opacity-[0.65]" style={{ background: "radial-gradient(1200px 600px at 70% 20%, rgba(99,102,241,0.22), transparent 55%), radial-gradient(900px 520px at 20% 80%, rgba(16,185,129,0.16), transparent 58%)" }} />
+      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:42px_42px] opacity-[0.08]" />
+
+      <div className="relative mx-auto h-full max-w-[1600px] px-4 py-4 grid grid-cols-[280px,1fr] gap-4">
+        <JournalsNav open={navOpen} onToggle={() => setNavOpen((v) => !v)} onNewJournal={handleNewJournal} />
+
+        <div className="min-h-0 grid grid-rows-[auto,1fr] gap-4">
+          <header className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="h-9 w-9 rounded-xl bg-white/10 ring-1 ring-white/15 backdrop-blur-md flex items-center justify-center">
+                <div className="h-4 w-4 rounded-sm bg-gradient-to-br from-indigo-400 via-fuchsia-300 to-emerald-300 opacity-95" />
+              </div>
+              <div className="leading-tight">
+                <div className="text-sm tracking-[0.18em] uppercase text-white/55">Loomin</div>
+                <div className="text-[15px] font-semibold text-white/92">{active?.name ?? "Journal"}</div>
+              </div>
             </div>
-          ))}
-        </div>
-      </div>
 
-      <div className={`flex flex-col border-r border-slate-700 bg-slate-900 transition-all duration-500 ${isSimEnabled ? 'w-5/12' : 'flex-1'}`}>
-         {/* HEADER - FIXED LAYOUT */}
-         <div className="p-3 bg-slate-800 border-b border-slate-700 flex justify-between items-center shrink-0">
-             <div className="flex gap-2">
-               <button onClick={saveNote} className="px-3 py-1 bg-blue-600 text-xs rounded font-bold hover:bg-blue-500">Save</button>
-               <button onClick={() => setIsAskOpen(!isAskOpen)} className="px-3 py-1 bg-purple-600 text-xs rounded font-bold hover:bg-purple-500">✨ Ask AI</button>
-             </div>
-             
-             <div className="flex items-center gap-3">
-                {/* GENERATE DECK */}
-                <div className="flex items-center gap-1 bg-slate-900 rounded p-1 border border-slate-700">
-                    <input type="range" min="3" max="10" value={cardCount} onChange={(e) => setCardCount(parseInt(e.target.value))} className="w-12 h-1 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"/>
-                    <span className="text-[10px] text-slate-400 w-3">{cardCount}</span>
-                    <button onClick={generateDeck} disabled={deckLoading} className="text-[10px] bg-emerald-900 text-emerald-400 px-2 py-1 rounded hover:bg-emerald-800">
-                        {deckLoading ? "..." : "Deck"}
+            {/* CONTROLS */}
+            <div className="flex items-center gap-2">
+                <button onClick={() => setShowUploadModal(true)} className="flex items-center gap-2 px-3 py-1.5 bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 rounded-lg text-sm text-purple-200 transition-all">
+                    <FileUp className="w-3.5 h-3.5" />
+                    Upload
+                </button>
+
+                <button onClick={() => setIsAskOpen(!isAskOpen)} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 rounded-lg text-sm text-indigo-200 transition-all">
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Ask AI
+                </button>
+                
+                <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1 border border-white/10">
+                    <button onClick={generateDeck} disabled={deckLoading} className="flex items-center gap-2 px-3 py-1 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 rounded text-xs transition-all border border-transparent hover:border-emerald-500/30">
+                        <BookOpen className="w-3 h-3" />
+                        {deckLoading ? "..." : "Study"}
                     </button>
                 </div>
 
-                {/* SIM TOGGLE (MOVED TO HEADER) */}
-                <button onClick={() => setIsSimEnabled(!isSimEnabled)} className={`flex items-center gap-2 px-3 py-1 rounded border transition-all ${isSimEnabled ? 'bg-emerald-900 border-emerald-500 text-emerald-100' : 'bg-slate-700 border-slate-600 text-slate-400'}`}>
-                    <div className={`w-2 h-2 rounded-full ${isSimEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-slate-500'}`} />
-                    <span className="text-[10px] font-bold">{isSimEnabled ? "ON" : "OFF"}</span>
+                <button onClick={() => setIsSimEnabled(!isSimEnabled)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${isSimEnabled ? 'bg-emerald-900/50 border-emerald-500/50 text-emerald-300' : 'bg-slate-800 border-slate-600 text-slate-400'}`}>
+                    {isSimEnabled ? <PlayCircle className="w-4 h-4" /> : <PauseCircle className="w-4 h-4" />}
+                    <span className="text-xs font-bold">{isSimEnabled ? "LIVE" : "PAUSED"}</span>
                 </button>
-             </div>
-         </div>
+            </div>
 
-         {isAskOpen && (
-           <div className="p-4 bg-slate-800 border-b border-slate-700">
-             <input autoFocus className="w-full bg-slate-900 border border-slate-700 rounded p-2 text-sm text-white" placeholder="Ex: Fix my windmill..." value={askPrompt} onChange={(e)=>setAskPrompt(e.target.value)} onKeyDown={(e)=>e.key==='Enter' && handleAskLoomin()} />
-           </div>
-         )}
-         
-         <div className="flex-1 relative min-h-0">
-            <Editor height="100%" defaultLanguage="markdown" theme="vs-dark" value={code} onChange={(val) => setCode(val || "")} options={{fontFamily: "JetBrains Mono", fontSize: 14, minimap:{enabled:false}, wordWrap:"on"}}/>
-         </div>
-      </div>
+            {/* Status Indicator */}
+            <div className="hidden md:flex items-center gap-2 rounded-2xl bg-white/6 ring-1 ring-white/12 px-3 py-2 backdrop-blur-md">
+              <div className={`h-2 w-2 rounded-full shadow-[0_0_18px_rgba(52,211,153,0.55)] transition-colors ${simStatus === 'CRITICAL_FAILURE' ? 'bg-red-500 animate-pulse' : 'bg-emerald-400/90'}`} />
+              <div className={`text-xs ${simStatus === 'CRITICAL_FAILURE' ? 'text-red-300' : 'text-white/65'}`}>{simStatus === 'CRITICAL_FAILURE' ? 'Error Detected' : 'System Ready'}</div>
+            </div>
+          </header>
 
-      <div className={`relative bg-black transition-all duration-500 overflow-hidden ${isSimEnabled ? 'flex-1 opacity-100' : 'w-0 opacity-0'}`}>
-         {isSimEnabled && (
-           <>
-             <div className="absolute top-8 left-8 z-10 w-80 pointer-events-none">
-                <div className={`p-6 rounded-xl border backdrop-blur-md shadow-2xl transition-all ${status === 'CRITICAL_FAILURE' ? 'bg-red-950/90 border-red-500' : 'bg-slate-900/50 border-emerald-500/30'}`}>
-                  <p className={`text-2xl font-mono font-bold ${status==='CRITICAL_FAILURE'?'text-red-400':'text-emerald-400'}`}>{status}</p>
-                  
-                  {status === 'CRITICAL_FAILURE' && (
-                      <div className="mt-4 pointer-events-auto animate-in fade-in">
-                          <p className="text-xs text-red-200 mb-3 leading-relaxed">{explanation}</p>
-                          <div className="h-px bg-red-500/30 w-full mb-3" />
-                          <button onClick={handleAutoFix} disabled={isAutoFixing} className="w-full py-2 bg-red-600 hover:bg-red-500 text-white rounded font-bold text-xs flex items-center justify-center gap-2 shadow-lg">
-                             {isAutoFixing ? "FIXING..." : "🔧 AUTO-FIX CODE"}
-                          </button>
+          <div className="min-h-0 grid grid-cols-12 gap-4">
+            
+            {/* LEFT COLUMN */}
+            <motion.section 
+               animate={{ gridColumn: isSimEnabled ? "span 5" : "span 12" }} 
+               className={`min-h-0 flex flex-col gap-4 ${isSimEnabled ? 'col-span-5' : 'col-span-12'}`}
+            >
+              
+              <AnimatePresence>
+                  {isAskOpen && (
+                    <motion.div initial={{opacity:0, height:0}} animate={{opacity:1, height:'auto'}} exit={{opacity:0, height:0}} className="overflow-hidden">
+                        <div className="bg-indigo-950/30 border border-indigo-500/30 rounded-xl p-2 flex gap-2">
+                            <input autoFocus className="flex-1 bg-transparent border-none outline-none text-sm px-2 placeholder:text-indigo-300/30 text-white" placeholder="Ex: Optimize for high wind..." value={askPrompt} onChange={(e)=>setAskPrompt(e.target.value)} onKeyDown={(e)=>e.key==='Enter' && handleAskLoomin()} />
+                            <button onClick={handleAskLoomin} className="px-3 py-1 bg-indigo-500 hover:bg-indigo-400 rounded text-xs font-bold transition-colors">Go</button>
+                        </div>
+                    </motion.div>
+                  )}
+              </AnimatePresence>
+
+              {/* VIDEO ANALYZER */}
+              <div className={`rounded-3xl bg-white/[0.055] ring-1 ring-white/12 backdrop-blur-xl overflow-hidden flex flex-col transition-all duration-300 ${isFullscreen ? 'fixed inset-4 z-[100]' : 'h-[35%]'}`}>
+                <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+                  <div className="text-sm font-semibold text-white/90">Video / Media</div>
+                  <div className="flex gap-3 items-center">
+                      <label className="cursor-pointer text-xs flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-all">
+                          <Upload className="w-3.5 h-3.5" />
+                          Upload
+                          <input type="file" accept="video/*,.mp4,.webm,.mov" className="hidden" onChange={handleVideoUpload} />
+                      </label>
+                      <button 
+                        onClick={() => setIsFullscreen(!isFullscreen)} 
+                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-all"
+                        title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
+                      >
+                          {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
+                      </button>
+                  </div>
+                </div>
+                <div className="flex-1 min-h-0 p-3 relative">
+                  {isVideoAnalyzing && (
+                      <div className="absolute inset-0 z-20 bg-black/90 flex flex-col items-center justify-center rounded-2xl">
+                          <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mb-3" />
+                          <p className="text-sm text-indigo-300 animate-pulse">Analyzing Video Content...</p>
+                          <p className="text-xs text-white/40 mt-1">Generating lecture notes & simulation</p>
                       </div>
                   )}
+                  <div className="relative h-full rounded-2xl overflow-hidden bg-black ring-1 ring-white/10">
+                    {videoSrc ? (
+                        <video 
+                          ref={videoRef}
+                          className={`w-full h-full ${isFullscreen ? 'object-contain' : 'object-cover'}`} 
+                          controls 
+                          playsInline 
+                          src={videoSrc}
+                          style={{ maxHeight: isFullscreen ? 'calc(100vh - 120px)' : '100%' }}
+                        />
+                    ) : (
+                        <div className="h-full flex flex-col items-center justify-center text-white/30 gap-2">
+                          <Upload className="w-8 h-8 text-white/20" />
+                          <p className="text-sm">Drop a video or click Upload</p>
+                          <p className="text-xs text-white/20">Supports MP4, WebM, MOV</p>
+                        </div>
+                    )}
+                  </div>
                 </div>
-             </div>
+              </div>
 
-             <Canvas shadows camera={{ position: [4, 4, 8], fov: 45 }}>
-                <Environment preset="city" />
-                <ambientLight intensity={0.7} />
-                <spotLight position={[10, 10, 10]} intensity={2} castShadow />
-                <Center>
-                  <Float speed={2} rotationIntensity={0.2}>
-                     {topic === 'wind_turbine' && <WindTurbine status={status} vars={vars} />}
-                     {topic === 'robot_arm' && <RobotArm status={status} />}
-                     {topic === 'electronics' && <CircuitBoard status={status} />}
-                  </Float>
-                </Center>
-                <ContactShadows opacity={0.4} scale={10} blur={2} />
-                <OrbitControls makeDefault />
-             </Canvas>
-           </>
-         )}
+              {/* EDITOR */}
+              <div className="flex-1 min-h-0 rounded-3xl bg-white/[0.055] ring-1 ring-white/12 backdrop-blur-xl shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_30px_90px_rgba(0,0,0,0.55)] overflow-hidden grid grid-rows-[auto,1fr]">
+                <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+                  <div className="text-sm font-semibold text-white/90">Editor</div>
+                  <div className="text-xs text-white/55">Live Config</div>
+                </div>
+                <div className="min-h-0 p-2 relative">
+                    <div className="h-full overflow-hidden rounded-2xl ring-1 ring-white/10 bg-[#0B1020]/70">
+                    <Monaco
+                        theme="vs-dark"
+                        language="plaintext"
+                        value={editorValue}
+                        onChange={onEditorChange}
+                        options={{ minimap: { enabled: false }, fontSize: 13, lineHeight: 20, padding: { top: 14, bottom: 14 }, smoothScrolling: true }}
+                    />
+                    </div>
+                </div>
+              </div>
+            </motion.section>
+
+            {/* RIGHT COLUMN (3D SANDBOX) */}
+            <AnimatePresence>
+                {isSimEnabled && (
+                    <motion.section 
+                        initial={{ opacity: 0, x: 20 }} 
+                        animate={{ opacity: 1, x: 0, gridColumn: "span 7" }} 
+                        exit={{ opacity: 0, x: 20, gridColumn: "span 0" }}
+                        className="min-h-0 col-span-7 relative h-full rounded-3xl bg-white/[0.055] ring-1 ring-white/12 backdrop-blur-xl shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_30px_90px_rgba(0,0,0,0.55)] overflow-hidden grid grid-rows-[auto,1fr]"
+                    >
+                        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+                          <div className="flex items-center gap-3">
+                            <div className="text-sm font-semibold text-white/90">3D Sandbox</div>
+                          </div>
+                          <div className="text-xs text-white/55">Interactive</div>
+                        </div>
+
+                        <div className="relative min-h-0">
+                          <Scene />
+                          
+                          <div className="pointer-events-none absolute right-4 top-4 flex items-center gap-2 rounded-2xl bg-white/10 ring-1 ring-white/15 px-3 py-2 backdrop-blur-xl z-10">
+                            <Leaf className="h-4 w-4 text-emerald-300/90" />
+                            <div className="text-xs font-semibold text-white/85">Sustainability</div>
+                          </div>
+
+                          <AnimatePresence>
+                            {simStatus === 'CRITICAL_FAILURE' && (
+                                <motion.div initial={{opacity:0, scale:0.9}} animate={{opacity:1, scale:1}} exit={{opacity:0, scale:0.9}} className="absolute top-16 left-8 z-50 w-80">
+                                    <div className="p-6 rounded-xl border bg-red-950/80 border-red-500/50 backdrop-blur-xl shadow-2xl">
+                                        <div className="flex items-center gap-2 mb-3">
+                                            <AlertTriangle className="w-5 h-5 text-red-400" />
+                                            <p className="text-lg font-mono font-bold text-red-400">CRITICAL_FAILURE</p>
+                                        </div>
+                                        <p className="text-xs text-red-100/80 mb-4 leading-relaxed">{explanation}</p>
+                                        <button onClick={handleAutoFix} disabled={isAutoFixing} className="w-full py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-2 shadow-lg">
+                                            <Wrench className="w-3.5 h-3.5" />
+                                            {isAutoFixing ? "FIXING..." : "AUTO-FIX CODE"}
+                                        </button>
+                                    </div>
+                                </motion.div>
+                            )}
+                          </AnimatePresence>
+
+                          <AnimatePresence>
+                            {simStatus === 'OPTIMAL' && (
+                                <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="absolute top-16 left-8 z-40 pointer-events-none">
+                                    <div className="px-4 py-2 rounded-xl border bg-emerald-950/40 border-emerald-500/30 backdrop-blur-md">
+                                        <div className="flex items-center gap-2">
+                                            <CheckCircle className="w-4 h-4 text-emerald-400" />
+                                            <p className="text-sm font-mono font-bold text-emerald-400">OPTIMAL</p>
+                                        </div>
+                                    </div>
+                                </motion.div>
+                            )}
+                          </AnimatePresence>
+                        </div>
+                    </motion.section>
+                )}
+            </AnimatePresence>
+          </div>
+        </div>
       </div>
-    </main>
+    </div>
   );
 }

@@ -9,7 +9,7 @@ function cx(...a) {
   return a.filter(Boolean).join(" ");
 }
 
-export default function JournalsNav({ open, onToggle }) {
+export default function JournalsNav({ open, onToggle, onNewJournal }) {
   const updateFromStorage = useLoominStore((s) => s.updateFromStorage);
   const journals = useLoominStore((s) => s.journals);
   const activeId = useLoominStore((s) => s.activeId);
@@ -17,6 +17,9 @@ export default function JournalsNav({ open, onToggle }) {
   const renameJournal = useLoominStore((s) => s.renameJournal);
   const deleteJournal = useLoominStore((s) => s.deleteJournal);
   const setActive = useLoominStore((s) => s.setActive);
+  
+  // Use the onNewJournal prop if provided, otherwise fall back to default createJournal
+  const handleNewJournal = onNewJournal || (() => createJournal?.(`Journal ${journals.length + 1}`));
 
   const [q, setQ] = useState("");
 
@@ -61,7 +64,7 @@ export default function JournalsNav({ open, onToggle }) {
           </button>
 
           <button
-            onClick={() => createJournal?.(`Journal ${journals.length + 1}`)}
+            onClick={handleNewJournal}
             className="h-[44px] w-[44px] rounded-2xl bg-white/8 ring-1 ring-white/12 hover:bg-white/12 active:bg-white/10 transition flex items-center justify-center"
             type="button"
             aria-label="New journal"
@@ -124,13 +127,19 @@ function JournalRow({ journal, active, canDelete, onSelect, onRename, onDelete }
 
   useEffect(() => setName(journal?.name ?? ""), [journal?.name]);
 
+  const handleSave = () => {
+    const trimmed = name.trim() || "Untitled";
+    onRename(trimmed);
+    setEditing(false);
+  };
+
+  // Use a div when editing to prevent button behavior issues
   return (
-    <motion.button
+    <motion.div
       layout
-      type="button"
-      onClick={onSelect}
+      onClick={() => !editing && onSelect()}
       className={cx(
-        "w-full text-left group rounded-2xl ring-1 transition overflow-hidden",
+        "w-full text-left group rounded-2xl ring-1 transition overflow-hidden cursor-pointer",
         active ? "bg-white/10 ring-white/18" : "bg-white/5 ring-white/10 hover:bg-white/8"
       )}
     >
@@ -141,18 +150,19 @@ function JournalRow({ journal, active, canDelete, onSelect, onRename, onDelete }
               value={name}
               onChange={(e) => setName(e.target.value)}
               onKeyDown={(e) => {
+                e.stopPropagation();
                 if (e.key === "Enter") {
-                  const trimmed = name.trim() || "Untitled";
-                  onRename(trimmed);
-                  setEditing(false);
+                  e.preventDefault();
+                  handleSave();
                 }
                 if (e.key === "Escape") {
                   setName(journal?.name ?? "");
                   setEditing(false);
                 }
               }}
+              onBlur={handleSave}
               onClick={(e) => e.stopPropagation()}
-              className="w-full bg-transparent text-[13px] text-white/90 outline-none"
+              className="w-full bg-transparent text-[13px] text-white/90 outline-none border-b border-indigo-500/50 pb-0.5"
               autoFocus
             />
           ) : (
@@ -164,15 +174,13 @@ function JournalRow({ journal, active, canDelete, onSelect, onRename, onDelete }
           <button
             onClick={(e) => {
               e.stopPropagation();
-              const trimmed = name.trim() || "Untitled";
-              onRename(trimmed);
-              setEditing(false);
+              handleSave();
             }}
-            className="h-8 w-8 rounded-xl bg-white/8 ring-1 ring-white/12 hover:bg-white/12 transition flex items-center justify-center"
+            className="h-8 w-8 rounded-xl bg-emerald-600/20 ring-1 ring-emerald-500/30 hover:bg-emerald-600/40 transition flex items-center justify-center"
             type="button"
             aria-label="Save"
           >
-            <Check className="h-4 w-4 text-white/80" />
+            <Check className="h-4 w-4 text-emerald-400" />
           </button>
         ) : (
           <>
@@ -209,6 +217,6 @@ function JournalRow({ journal, active, canDelete, onSelect, onRename, onDelete }
           </>
         )}
       </div>
-    </motion.button>
+    </motion.div>
   );
 }
