@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from "framer-motion";
 import dynamic from "next/dynamic";
 import Scene from "../editor/Scene";
 import JournalsNav from "../editor/components/JournalsNav";
-import { Leaf, Sparkles, BookOpen, AlertTriangle, Wrench, CheckCircle, PlayCircle, PauseCircle, Upload, Maximize2, Minimize2, FileUp, LogOut } from "lucide-react";
+import { Leaf, Sparkles, BookOpen, AlertTriangle, Wrench, CheckCircle, PlayCircle, PauseCircle, Upload, Maximize2, Minimize2, LogOut } from "lucide-react";
 import UploadModal from "../editor/components/UploadModal";
 import { useLoominStore } from "../editor/store";
 
@@ -498,11 +498,6 @@ Scene_Mode = 0
 
             {/* CONTROLS */}
             <div className="flex items-center gap-2">
-                <button onClick={() => setShowUploadModal(true)} className="flex items-center gap-2 px-3 py-1.5 bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 rounded-lg text-sm text-purple-200 transition-all">
-                    <FileUp className="w-3.5 h-3.5" />
-                    Upload
-                </button>
-
                 <button onClick={() => setIsAskOpen(!isAskOpen)} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 rounded-lg text-sm text-indigo-200 transition-all">
                     <Sparkles className="w-3.5 h-3.5" />
                     Ask AI
