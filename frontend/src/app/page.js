@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import landingImg from './landing.jpg' 
 import Image from "next/image";
+import { redirect } from 'next/navigation';
 
 
 function Landing() {
@@ -33,7 +34,7 @@ function Landing() {
                         </div>
                     </div>
                     <div className="mt-10 flex justify-center">
-                        <button className="inline-flex items-center gap-2 rounded-lg bg-indigo-500/90 px-6 py-3 text-base font-semibold text-white shadow-lg shadow-indigo-500/20 transition-all hover:bg-indigo-500 hover:shadow-indigo-500/30 hover:scale-[1.05] duration-300">
+                        <button onClick={() => {redirect('/editor')}} className="inline-flex items-center gap-2 rounded-lg bg-indigo-500/90 px-6 py-3 text-base font-semibold text-white shadow-lg shadow-indigo-500/20 transition-all hover:bg-indigo-500 hover:shadow-indigo-500/30 hover:scale-[1.05] duration-300">
                             Get started <span className="text-lg">➡️</span>
                         </button>
                     </div>                
