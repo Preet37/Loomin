@@ -7,6 +7,7 @@ import { useLoominStore } from "./store";
 
 import Arm from "./components/Arm";
 import Turbine from "./components/Turbine";
+import GenericVisual from "./components/GenericVisual";
 
 function ResetCameraOnJournalChange({ mode }) {
   const activeId = useLoominStore((s) => s.activeId);
@@ -18,8 +19,12 @@ function ResetCameraOnJournalChange({ mode }) {
       // Turbine - look at hub height (hub is at y=8.5)
       camera.position.set(10, 8, 16);
       controls.target.set(0, 6, 0);
-    } else {
+    } else if (mode === 1) {
       // Arm
+      camera.position.set(6, 4, 8);
+      controls.target.set(0, 2, 0);
+    } else {
+      // Generic/Custom visualization
       camera.position.set(6, 4, 8);
       controls.target.set(0, 2, 0);
     }
@@ -62,7 +67,9 @@ export default function Scene() {
       <Suspense fallback={null}>
         <Environment preset="city" />
 
-        {mode === 1 ? <Arm /> : <Turbine />}
+        {mode === 0 && <Turbine />}
+        {mode === 1 && <Arm />}
+        {mode >= 2 && <GenericVisual />}
 
         <ContactShadows position={[0, groundY, 0]} opacity={0.5} scale={25} blur={2.5} far={6} />
         <mesh rotation={[-Math.PI / 2, 0, 0]} position={[0, groundY - 0.01, 0]} receiveShadow>

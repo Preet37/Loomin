@@ -15,28 +15,30 @@ const Monaco = dynamic(() => import("@monaco-editor/react"), { ssr: false });
 function extractVariablesFromText(text: string) {
   const out: any = {};
   
-  // Regex to find "Wind Speed: 50" or "blade count = 5" anywhere in text
-  const patterns = [
-    { key: 'Wind_Speed', regex: /(?:wind\s*speed|velocity)[:\s=]+(\d+)/i },
-    { key: 'Blade_Count', regex: /(?:blade\s*count|number\s*of\s*blades)[:\s=]+(\d+)/i },
-    { key: 'Blade_Pitch', regex: /(?:blade\s*pitch|angle)[:\s=]+(\d+)/i },
-    { key: 'Yaw', regex: /(?:yaw|direction)[:\s=]+(\d+)/i },
-    { key: 'Scene_Mode', regex: /(?:scene|mode)[:\s=]+(\d+)/i },
-  ];
-
-  patterns.forEach(({ key, regex }) => {
-    const match = text.match(regex);
-    if (match && match[1]) {
-      out[key] = Number(match[1]);
-    }
-  });
-
-  // Fallback: Also capture standard "Var = Val" format at bottom of file
-  const standardRegex = /(?:^|\n)\s*([A-Za-z_]+)\s*=\s*(\d+)/g;
+  // FIRST: Capture standard "Var = Val" format (most reliable for explicit params)
+  // This ensures Scene_Mode = 2 is captured correctly
+  const standardRegex = /(?:^|\n)\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(-?\d+(?:\.\d+)?)/g;
   let m;
   while ((m = standardRegex.exec(text)) !== null) {
      out[m[1]] = Number(m[2]);
   }
+  
+  // SECOND: Natural language patterns (only if not already captured)
+  const patterns = [
+    { key: 'Wind_Speed', regex: /(?:wind\s*speed|velocity)[:\s]+(\d+)/i },
+    { key: 'Blade_Count', regex: /(?:blade\s*count|number\s*of\s*blades)[:\s]+(\d+)/i },
+    { key: 'Blade_Pitch', regex: /(?:blade\s*pitch|pitch\s*angle)[:\s]+(\d+)/i },
+    { key: 'Yaw', regex: /(?:yaw|direction)[:\s]+(\d+)/i },
+  ];
+
+  patterns.forEach(({ key, regex }) => {
+    if (out[key] === undefined) { // Only if not already captured
+      const match = text.match(regex);
+      if (match && match[1]) {
+        out[key] = Number(match[1]);
+      }
+    }
+  });
 
   return out;
 }
@@ -212,11 +214,20 @@ export default function Page() {
         const newVars = extractVariablesFromText(code);
         
         // Auto-Switch Scene based on detected topic
-        // Always set Scene_Mode when a valid topic is detected
-        if (extraction.topic === 'robot_arm') {
-            newVars.Scene_Mode = 1;
-        } else if (extraction.topic === 'wind_turbine') {
-            newVars.Scene_Mode = 0;
+        // ONLY if Scene_Mode wasn't explicitly set by the user
+        // Scene_Mode >= 2 means user wants a specific generic visualization
+        const userSetSceneMode = newVars.Scene_Mode !== undefined && newVars.Scene_Mode >= 2;
+        
+        if (!userSetSceneMode) {
+            if (extraction.topic === 'robot_arm') {
+                newVars.Scene_Mode = 1;
+            } else if (extraction.topic === 'wind_turbine') {
+                newVars.Scene_Mode = 0;
+            } else if (extraction.topic === 'motherboard' || extraction.topic === 'circuit' || 
+                       extraction.topic === 'mechanical' || extraction.topic === 'solar' || 
+                       extraction.topic === 'engine' || extraction.topic === 'generic') {
+                newVars.Scene_Mode = 2;
+            }
         }
 
         // Apply Extracted Vars to Partner's Store
@@ -468,10 +479,12 @@ Scene_Mode = 0
       <div className="pointer-events-none fixed inset-0 opacity-[0.65]" style={{ background: "radial-gradient(1200px 600px at 70% 20%, rgba(99,102,241,0.22), transparent 55%), radial-gradient(900px 520px at 20% 80%, rgba(16,185,129,0.16), transparent 58%)" }} />
       <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:42px_42px] opacity-[0.08]" />
 
-      <div className="relative mx-auto h-full max-w-[1600px] px-4 py-4 grid grid-cols-[280px,1fr] gap-4">
+      <div className="relative mx-auto h-full max-w-[1800px] px-4 py-4 grid grid-cols-[200px,1fr] gap-3">
+        {/* LEFT SIDEBAR - Journals */}
         <JournalsNav open={navOpen} onToggle={() => setNavOpen((v) => !v)} onNewJournal={handleNewJournal} />
 
-        <div className="min-h-0 grid grid-rows-[auto,1fr] gap-4">
+        {/* MAIN CONTENT AREA */}
+        <div className="min-h-0 grid grid-rows-[auto,1fr] gap-3">
           <header className="flex items-center justify-between">
             <div className="flex items-center gap-3">
               <div className="h-9 w-9 rounded-xl bg-white/10 ring-1 ring-white/15 backdrop-blur-md flex items-center justify-center">
@@ -515,12 +528,12 @@ Scene_Mode = 0
             </div>
           </header>
 
-          <div className="min-h-0 grid grid-cols-12 gap-4">
+          <div className="min-h-0 grid grid-cols-12 gap-3">
             
-            {/* LEFT COLUMN */}
+            {/* LEFT COLUMN - Editor (larger) */}
             <motion.section 
-               animate={{ gridColumn: isSimEnabled ? "span 5" : "span 12" }} 
-               className={`min-h-0 flex flex-col gap-4 ${isSimEnabled ? 'col-span-5' : 'col-span-12'}`}
+               animate={{ gridColumn: isSimEnabled ? "span 7" : "span 12" }} 
+               className={`min-h-0 flex flex-col gap-3 ${isSimEnabled ? 'col-span-7' : 'col-span-12'}`}
             >
               
               <AnimatePresence>
@@ -535,7 +548,7 @@ Scene_Mode = 0
               </AnimatePresence>
 
               {/* VIDEO ANALYZER */}
-              <div className={`rounded-3xl bg-white/[0.055] ring-1 ring-white/12 backdrop-blur-xl overflow-hidden flex flex-col transition-all duration-300 ${isFullscreen ? 'fixed inset-4 z-[100]' : 'h-[35%]'}`}>
+              <div className={`rounded-3xl bg-white/[0.055] ring-1 ring-white/12 backdrop-blur-xl overflow-hidden flex flex-col transition-all duration-300 ${isFullscreen ? 'fixed inset-4 z-[100]' : 'h-[28%] min-h-[140px]'}`}>
                 <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
                   <div className="text-sm font-semibold text-white/90">Video / Media</div>
                   <div className="flex gap-3 items-center">
@@ -592,10 +605,19 @@ Scene_Mode = 0
                     <div className="h-full overflow-hidden rounded-2xl ring-1 ring-white/10 bg-[#0B1020]/70">
                     <Monaco
                         theme="vs-dark"
-                        language="plaintext"
+                        language="markdown"
                         value={editorValue}
                         onChange={onEditorChange}
-                        options={{ minimap: { enabled: false }, fontSize: 13, lineHeight: 20, padding: { top: 14, bottom: 14 }, smoothScrolling: true }}
+                        options={{ 
+                          minimap: { enabled: false }, 
+                          fontSize: 13, 
+                          lineHeight: 20, 
+                          padding: { top: 14, bottom: 14 }, 
+                          smoothScrolling: true,
+                          wordWrap: "on",
+                          wrappingIndent: "same",
+                          lineNumbers: "on"
+                        }}
                     />
                     </div>
                 </div>
@@ -607,9 +629,9 @@ Scene_Mode = 0
                 {isSimEnabled && (
                     <motion.section 
                         initial={{ opacity: 0, x: 20 }} 
-                        animate={{ opacity: 1, x: 0, gridColumn: "span 7" }} 
+                        animate={{ opacity: 1, x: 0, gridColumn: "span 5" }} 
                         exit={{ opacity: 0, x: 20, gridColumn: "span 0" }}
-                        className="min-h-0 col-span-7 relative h-full rounded-3xl bg-white/[0.055] ring-1 ring-white/12 backdrop-blur-xl shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_30px_90px_rgba(0,0,0,0.55)] overflow-hidden grid grid-rows-[auto,1fr]"
+                        className="min-h-0 col-span-5 relative h-full rounded-3xl bg-white/[0.055] ring-1 ring-white/12 backdrop-blur-xl shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_30px_90px_rgba(0,0,0,0.55)] overflow-hidden grid grid-rows-[auto,1fr]"
                     >
                         <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
                           <div className="flex items-center gap-3">

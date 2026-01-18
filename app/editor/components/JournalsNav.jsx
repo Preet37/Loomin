@@ -36,8 +36,8 @@ export default function JournalsNav({ open, onToggle, onNewJournal }) {
   }, [journals, q]);
 
   return (
-    <div className="w-full rounded-3xl bg-white/[0.045] ring-1 ring-white/12 backdrop-blur-xl shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_30px_90px_rgba(0,0,0,0.55)] overflow-hidden">
-      <div className="px-3 py-3">
+    <div className="w-full h-full rounded-3xl bg-white/[0.045] ring-1 ring-white/12 backdrop-blur-xl shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_30px_90px_rgba(0,0,0,0.55)] overflow-hidden flex flex-col">
+      <div className="px-3 py-3 flex-shrink-0">
         <div className="flex items-center gap-2">
           <button
             onClick={onToggle}
@@ -83,10 +83,10 @@ export default function JournalsNav({ open, onToggle, onNewJournal }) {
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
             transition={{ duration: 0.52, ease: [0.22, 1, 0.36, 1] }}
-            className="border-t border-white/10"
+            className="border-t border-white/10 flex-1 flex flex-col min-h-0"
             style={{ overflow: "hidden" }}
           >
-            <motion.div layout className="px-3 py-3 border-b border-white/10">
+            <motion.div layout className="px-3 py-3 border-b border-white/10 flex-shrink-0">
               <div className="flex items-center gap-2 rounded-2xl bg-white/6 ring-1 ring-white/10 px-3 py-2">
                 <Search className="h-4 w-4 text-white/55" />
                 <input
@@ -98,7 +98,7 @@ export default function JournalsNav({ open, onToggle, onNewJournal }) {
               </div>
             </motion.div>
 
-            <motion.div layout className="px-2 py-2 max-h-[52vh] overflow-auto loomin-scroll">
+            <motion.div layout className="px-2 py-2 flex-1 overflow-auto loomin-scroll">
               <div className="space-y-1">
                 {filtered.map((j) => (
                   <JournalRow
