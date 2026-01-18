@@ -38,17 +38,37 @@ export default function UploadModal({ isOpen, onClose, onComplete }) {
     setAnalysisResult(null);
 
     try {
-      const formData = new FormData();
-      formData.append('file', selectedFile);
-      formData.append('fileName', selectedFile.name);
-      formData.append('fileType', selectedFile.type.includes('video') ? 'video' : 
-                                  selectedFile.type.includes('pdf') ? 'PDF' : 
-                                  selectedFile.type.includes('image') ? 'image' : 'document');
+      const isVideo = selectedFile.type.includes('video');
+      const fileType = isVideo ? 'video' : 
+                       selectedFile.type.includes('pdf') ? 'PDF' : 
+                       selectedFile.type.includes('image') ? 'image' : 'document';
 
-      const response = await fetch('/api/analyze_document', {
-        method: 'POST',
-        body: formData,
-      });
+      // For videos, only send metadata (files can be too large for serverless)
+      // For smaller files, send the actual file
+      let response;
+      
+      if (isVideo || selectedFile.size > 4 * 1024 * 1024) {
+        // Send only metadata for large files
+        response = await fetch('/api/analyze_document', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fileName: selectedFile.name,
+            fileType: fileType,
+            metadataOnly: true
+          }),
+        });
+      } else {
+        // Send full file for smaller documents
+        const formData = new FormData();
+        formData.append('file', selectedFile);
+        formData.append('fileName', selectedFile.name);
+        formData.append('fileType', fileType);
+        response = await fetch('/api/analyze_document', {
+          method: 'POST',
+          body: formData,
+        });
+      }
 
       if (!response.ok) {
         throw new Error('Analysis failed');

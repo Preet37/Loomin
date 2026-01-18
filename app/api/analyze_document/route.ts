@@ -5,13 +5,25 @@ const groq = new Groq({ apiKey: process.env.GROQ_API_KEY });
 
 export async function POST(req: Request) {
   try {
-    const formData = await req.formData();
-    const file = formData.get('file') as File | null;
-    const fileType = formData.get('fileType') as string;
-    const fileName = formData.get('fileName') as string;
+    let fileName: string;
+    let fileType: string;
+    
+    const contentType = req.headers.get('content-type') || '';
+    
+    // Handle both JSON (metadata only) and FormData requests
+    if (contentType.includes('application/json')) {
+      const json = await req.json();
+      fileName = json.fileName;
+      fileType = json.fileType;
+    } else {
+      const formData = await req.formData();
+      const file = formData.get('file') as File | null;
+      fileType = formData.get('fileType') as string;
+      fileName = formData.get('fileName') as string;
 
-    if (!file) {
-      return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+      if (!file && !fileName) {
+        return NextResponse.json({ error: 'No file provided' }, { status: 400 });
+      }
     }
 
     // Analyze based on file metadata and generate intelligent content
