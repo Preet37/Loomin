@@ -264,98 +264,89 @@ export default function DashboardPage() {
     const changes: string[] = [];
     
     // Parse recommendation for specific fixes (handle decimals)
-    const windMatch = recommendation.match(/wind_speed.*?(\d+\.?\d*)/i);
+    const windMatch = recommendation.match(/wind_speed.*?(\d+(?:\.\d+)?)/i);
     const bladeMatch = recommendation.match(/blade_count.*?(\d+)/i);
-    const payloadMatch = recommendation.match(/payload.*?(\d+\.?\d*)/i);
+    const payloadMatch = recommendation.match(/payload.*?(\d+(?:\.\d+)?)/i);
+    
+    // FALLBACK: If we detect a robot arm failure but no payload in recommendation,
+    // calculate safe payload directly (max torque 600 Nm, assume arm_length = 1m)
+    const isRobotArmFailure = simMessage.toLowerCase().includes('torque') || 
+                               simMessage.toLowerCase().includes('gear') ||
+                               simMessage.toLowerCase().includes('shoulder');
+    
+    // Check if there's a payload in the code that needs fixing
+    const currentPayloadMatch = editorValue.match(/[Pp]ayload\s*=\s*(\d+(?:\.\d+)?)/);
+    const currentPayload = currentPayloadMatch ? parseFloat(currentPayloadMatch[1]) : 0;
     
     // Helper: Replace parameter in various formats with inline change comment
     const replaceParam = (
       code: string, 
-      patterns: RegExp[], 
+      pattern: RegExp, 
       newVal: string, 
       paramName: string
     ): { code: string; oldVal: string | null } => {
-      let oldVal: string | null = null;
-      let modified = code;
-      
-      for (const pattern of patterns) {
-        const match = code.match(pattern);
-        if (match) {
-          oldVal = match[1];
-          // Replace with new value and add change comment
-          modified = code.replace(pattern, `${paramName} = ${newVal}  // changed from ${oldVal}`);
-          break;
-        }
+      const match = code.match(pattern);
+      if (match) {
+        const oldVal = match[1];
+        // Replace the entire match with the new value
+        const modified = code.replace(pattern, `${paramName} = ${newVal}  // fixed from ${oldVal}`);
+        return { code: modified, oldVal };
       }
-      
-      return { code: modified, oldVal };
+      return { code, oldVal: null };
     };
     
     // Fix wind speed - match various formats
     if (windMatch) {
       const newVal = windMatch[1];
-      const windPatterns = [
-        /[Ww]ind[_\s]*[Ss]peed\s*=\s*(\d+)(?:\s*(?:mph|m\/s|kmh)?)?/,
-        /[Vv]elocity\s*=\s*(\d+)/,
-      ];
-      const result = replaceParam(updatedCode, windPatterns, newVal, 'Wind_Speed');
+      const result = replaceParam(updatedCode, /[Ww]ind[_\s]*[Ss]peed\s*=\s*(\d+(?:\.\d+)?)\s*(?:mph|m\/s|kmh)?/, newVal, 'Wind_Speed');
       if (result.oldVal) {
         updatedCode = result.code;
-        changes.push(`Wind_Speed: ${result.oldVal} -> ${newVal} (safer for blade stress)`);
-      } else {
-        // No existing param found, add it
-        updatedCode += `\nWind_Speed = ${newVal}  // added by auto-fix`;
-        changes.push(`Wind_Speed: added ${newVal}`);
+        changes.push(`Wind_Speed: ${result.oldVal} -> ${newVal}`);
       }
     }
     
     // Fix blade count - match various formats
     if (bladeMatch) {
       const newVal = bladeMatch[1];
-      const bladePatterns = [
-        /[Bb]lade[_\s]*[Cc]ount\s*=\s*(\d+)/,
-        /[Nn]umber\s*of\s*[Bb]lades\s*=\s*(\d+)/,
-        /[Bb]lades\s*=\s*(\d+)/,
-      ];
-      const result = replaceParam(updatedCode, bladePatterns, newVal, 'Blade_Count');
+      const result = replaceParam(updatedCode, /[Bb]lade[_\s]*[Cc]ount\s*=\s*(\d+)/, newVal, 'Blade_Count');
       if (result.oldVal) {
         updatedCode = result.code;
-        changes.push(`Blade_Count: ${result.oldVal} -> ${newVal} (reduces drag)`);
-      } else {
-        updatedCode += `\nBlade_Count = ${newVal}  // added by auto-fix`;
-        changes.push(`Blade_Count: added ${newVal}`);
+        changes.push(`Blade_Count: ${result.oldVal} -> ${newVal}`);
       }
     }
     
-    // Fix payload - handle units like "kg", "lbs", etc.
+    // Fix payload - with robust fallback
+    let safePayload: string | null = null;
+    
     if (payloadMatch) {
-      const newVal = Math.round(parseFloat(payloadMatch[1])).toString(); // Round to whole number
-      const payloadPatterns = [
-        /[Pp]ayload\s*=\s*(\d+(?:\.\d+)?)\s*(?:kg|lbs?|pounds?)?/,
-        /[Ww]eight\s*=\s*(\d+(?:\.\d+)?)\s*(?:kg|lbs?|pounds?)?/,
-        /[Ll]oad\s*=\s*(\d+(?:\.\d+)?)\s*(?:kg|lbs?|pounds?)?/,
-      ];
-      const result = replaceParam(updatedCode, payloadPatterns, newVal, 'Payload');
+      safePayload = Math.round(parseFloat(payloadMatch[1])).toString();
+    } else if (isRobotArmFailure && currentPayload > 60) {
+      // Fallback: Calculate safe payload (max torque 600 Nm / (1m * 9.8) ≈ 61 kg)
+      safePayload = "60";
+    }
+    
+    if (safePayload && currentPayloadMatch) {
+      // Match payload with optional units
+      const payloadPattern = /[Pp]ayload\s*=\s*(\d+(?:\.\d+)?)\s*(?:kg|lbs?|pounds?)?/;
+      const result = replaceParam(updatedCode, payloadPattern, safePayload, 'payload');
       if (result.oldVal) {
         updatedCode = result.code;
-        changes.push(`Payload: ${result.oldVal} -> ${newVal} kg (within torque limit)`);
-      } else {
-        updatedCode += `\nPayload = ${newVal}  // added by auto-fix`;
-        changes.push(`Payload: added ${newVal}`);
+        changes.push(`Payload: ${result.oldVal} -> ${safePayload} kg`);
       }
     }
     
-    // Add a brief fix summary at top (not a huge block)
-    const fixSummary = `// AUTO-FIX: ${changes.join(' | ')}
-// Why: ${simMessage.substring(0, 80)}${simMessage.length > 80 ? '...' : ''}
+    // Only add summary if we made changes
+    if (changes.length > 0) {
+      const fixSummary = `// AUTO-FIX: ${changes.join(' | ')}
+// Reason: ${simMessage.substring(0, 80)}${simMessage.length > 80 ? '...' : ''}
 
 `;
+      updatedCode = fixSummary + updatedCode;
+    }
     
-    const finalCode = fixSummary + updatedCode;
-    
-    setEditorValue(finalCode);
-    setVars(extractVariablesFromText(finalCode));
-    runSimulation(finalCode);
+    setEditorValue(updatedCode);
+    setVars(extractVariablesFromText(updatedCode));
+    runSimulation(updatedCode);
     
     setTimeout(() => setIsAutoFixing(false), 800);
   };
