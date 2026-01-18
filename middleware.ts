@@ -16,7 +16,7 @@ export function middleware(request: NextRequest) {
   // Protect dashboard route - redirect to login if no session
   if (request.nextUrl.pathname.startsWith('/dashboard')) {
     if (!isAuthenticated) {
-      return NextResponse.redirect(new URL('/auth/login', request.url));
+      return NextResponse.redirect(new URL('/api/auth/login', request.url));
     }
   }
   

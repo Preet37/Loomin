@@ -521,7 +521,7 @@ Scene_Mode = 0
                 </button>
 
                 {/* Logout Button */}
-                <a href="/auth/logout" className="flex items-center gap-2 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/40 border border-red-500/30 rounded-lg text-sm text-red-200 transition-all">
+                <a href="/api/auth/logout" className="flex items-center gap-2 px-3 py-1.5 bg-red-600/20 hover:bg-red-600/40 border border-red-500/30 rounded-lg text-sm text-red-200 transition-all">
                     <LogOut className="w-3.5 h-3.5" />
                     Logout
                 </a>
