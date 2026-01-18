@@ -315,24 +315,30 @@ export default function DashboardPage() {
       }
     }
     
-    // Fix payload - with robust fallback
-    let safePayload: string | null = null;
-    
-    if (payloadMatch) {
-      safePayload = Math.round(parseFloat(payloadMatch[1])).toString();
-    } else if (isRobotArmFailure && currentPayload > 60) {
-      // Fallback: Calculate safe payload (max torque 600 Nm / (1m * 9.8) ≈ 61 kg)
-      safePayload = "60";
-    }
-    
-    if (safePayload && currentPayloadMatch) {
-      // Match payload with optional units
-      const payloadPattern = /[Pp]ayload\s*=\s*(\d+(?:\.\d+)?)\s*(?:kg|lbs?|pounds?)?/;
-      const result = replaceParam(updatedCode, payloadPattern, safePayload, 'payload');
-      if (result.oldVal) {
-        updatedCode = result.code;
-        changes.push(`Payload: ${result.oldVal} -> ${safePayload} kg`);
+    // Fix payload - DIRECT approach for robot arm failures
+    if (isRobotArmFailure) {
+      // Calculate safe payload: max torque 600 Nm / (arm_length * 9.8)
+      // Default arm_length = 1m, so max safe payload ≈ 61 kg, use 60 for safety margin
+      let safePayload = "60";
+      
+      // Try to get specific value from recommendation
+      if (payloadMatch) {
+        safePayload = Math.round(parseFloat(payloadMatch[1])).toString();
       }
+      
+      // Find payload in code using multiple patterns
+      const lines = updatedCode.split('\n');
+      const newLines = lines.map(line => {
+        // Match various payload formats: "payload = 100", "payload = 100 kg", "Payload = 100"
+        const payloadLineMatch = line.match(/^(\s*)([Pp]ayload)\s*=\s*(\d+(?:\.\d+)?)\s*(kg|lbs?|pounds?)?(.*)$/);
+        if (payloadLineMatch) {
+          const [, indent, varName, oldVal] = payloadLineMatch;
+          changes.push(`Payload: ${oldVal} -> ${safePayload} kg`);
+          return `${indent}${varName} = ${safePayload}  // fixed from ${oldVal}`;
+        }
+        return line;
+      });
+      updatedCode = newLines.join('\n');
     }
     
     // Only add summary if we made changes
