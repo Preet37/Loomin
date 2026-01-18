@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Loomin Control Deck",
-  description: "Backend API Tester",
+  title: "Loomin - The Future of Learning",
+  description: "Transform your notes into interactive 3D simulations. AI-powered learning platform.",
 };
 
 export default function RootLayout({

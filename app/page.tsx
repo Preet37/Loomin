@@ -1,690 +1,539 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
-import { motion, AnimatePresence } from "framer-motion";
-import dynamic from "next/dynamic";
-import Scene from "./editor/Scene";
-import JournalsNav from "./editor/components/JournalsNav";
-import { Leaf, Sparkles, BookOpen, AlertTriangle, Wrench, CheckCircle, PlayCircle, PauseCircle, Upload, Maximize2, Minimize2, FileUp } from "lucide-react";
-import UploadModal from "./editor/components/UploadModal";
-import { useLoominStore } from "./editor/store";
+import { motion, useScroll, useTransform } from "framer-motion";
+import { useRef } from "react";
+import Link from "next/link";
+import TypewriterText from "./components/TypewriterText";
+import FeatureCard from "./components/FeatureCard";
+import TechBadge from "./components/TechBadge";
+import { 
+  Cpu, 
+  Brain, 
+  Layers, 
+  Zap, 
+  BookOpen, 
+  Video, 
+  Boxes,
+  Sparkles,
+  Database,
+  Code2,
+  Palette,
+  Box
+} from "lucide-react";
 
-const Monaco = dynamic(() => import("@monaco-editor/react"), { ssr: false });
-
-// --- SMART PARSER: EXTRACTS VARIABLES FROM NATURAL TEXT ---
-function extractVariablesFromText(text: string) {
-  const out: any = {};
-  
-  // FIRST: Capture standard "Var = Val" format (most reliable for explicit params)
-  // This ensures Scene_Mode = 2 is captured correctly
-  const standardRegex = /(?:^|\n)\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(-?\d+(?:\.\d+)?)/g;
-  let m;
-  while ((m = standardRegex.exec(text)) !== null) {
-     out[m[1]] = Number(m[2]);
-  }
-  
-  // SECOND: Natural language patterns (only if not already captured)
-  const patterns = [
-    { key: 'Wind_Speed', regex: /(?:wind\s*speed|velocity)[:\s]+(\d+)/i },
-    { key: 'Blade_Count', regex: /(?:blade\s*count|number\s*of\s*blades)[:\s]+(\d+)/i },
-    { key: 'Blade_Pitch', regex: /(?:blade\s*pitch|pitch\s*angle)[:\s]+(\d+)/i },
-    { key: 'Yaw', regex: /(?:yaw|direction)[:\s]+(\d+)/i },
-  ];
-
-  patterns.forEach(({ key, regex }) => {
-    if (out[key] === undefined) { // Only if not already captured
-      const match = text.match(regex);
-      if (match && match[1]) {
-        out[key] = Number(match[1]);
-      }
-    }
+export default function LandingPage() {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const { scrollYProgress } = useScroll({
+    target: containerRef,
+    offset: ["start start", "end end"]
   });
 
-  return out;
-}
-
-// --- FLASHCARD ENGINE ---
-function FlashcardMode({ initialCards, onClose }: { initialCards: any[], onClose: () => void }) {
-  const [deck, setDeck] = useState(initialCards);
-  const [learningQueue, setLearningQueue] = useState<any[]>([]); 
-  const [masteredCount, setMasteredCount] = useState(0);
-  const [index, setIndex] = useState(0);
-  const [isFlipped, setIsFlipped] = useState(false);
-  const [viewState, setViewState] = useState<'STUDYING' | 'SUMMARY' | 'VICTORY'>('STUDYING');
-
-  if (!deck || deck.length === 0) return null;
-  const current = deck[index];
-
-  const handleSwipe = (mastered: boolean) => {
-    setIsFlipped(false);
-    if (mastered) setMasteredCount(prev => prev + 1);
-    else setLearningQueue(prev => [...prev, current]);
-
-    setTimeout(() => {
-        if (index < deck.length - 1) setIndex(prev => prev + 1);
-        else finishRound(mastered);
-    }, 200);
-  };
-
-  const finishRound = (lastMastered: boolean) => {
-     const finalQueue = lastMastered ? learningQueue : [...learningQueue, current];
-     if (finalQueue.length === 0) setViewState('VICTORY');
-     else setViewState('SUMMARY');
-  };
-
-  const restartRound = () => {
-      setDeck(learningQueue);
-      setLearningQueue([]);
-      setIndex(0);
-      setViewState('STUDYING');
-  };
-
-  const restartFull = () => {
-      setDeck(initialCards);
-      setLearningQueue([]);
-      setMasteredCount(0);
-      setIndex(0);
-      setViewState('STUDYING');
-  };
-
-  if (viewState === 'VICTORY') {
-      return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/95 backdrop-blur-md">
-            <div className="text-center p-8 bg-slate-900 border border-emerald-500 rounded-2xl shadow-2xl">
-                <h2 className="text-4xl font-bold text-emerald-400 mb-4">🎉 Deck Mastered!</h2>
-                <div className="flex gap-4 justify-center">
-                    <button onClick={restartFull} className="px-6 py-2 bg-slate-800 hover:bg-slate-700 rounded-lg font-bold text-white transition-all">Restart</button>
-                    <button onClick={onClose} className="px-6 py-2 bg-emerald-600 hover:bg-emerald-500 rounded-lg font-bold text-white transition-all">Return to Notes</button>
-                </div>
-            </div>
-        </div>
-      );
-  }
-
-  if (viewState === 'SUMMARY') {
-      return (
-        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-slate-950/95 backdrop-blur-md">
-            <div className="text-center p-8 bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl">
-                <h2 className="text-2xl font-bold text-white mb-6">Round Complete</h2>
-                <p className="mb-4 text-slate-400">Mastered: {masteredCount} | Learning: {learningQueue.length}</p>
-                <button onClick={restartRound} className="w-full py-3 bg-white text-black hover:bg-gray-200 rounded-lg font-bold mb-3 transition-all">Keep Learning ({learningQueue.length})</button>
-                <button onClick={onClose} className="w-full py-3 text-slate-400 hover:text-white transition-all">Exit</button>
-            </div>
-        </div>
-      );
-  }
+  const backgroundY = useTransform(scrollYProgress, [0, 1], ["0%", "50%"]);
+  const opacity = useTransform(scrollYProgress, [0, 0.3], [1, 0]);
 
   return (
-    <div className="fixed inset-0 z-[100] flex flex-col items-center justify-center bg-slate-950/95 backdrop-blur-md" onClick={(e) => e.stopPropagation()}>
-      <div className="w-full max-w-xl px-4">
-        <div 
-          onClick={() => setIsFlipped(!isFlipped)}
-          className="relative w-full h-80 cursor-pointer group perspective"
-          style={{ perspective: "1000px" }}
-        >
-           <div className={`relative w-full h-full duration-500 transition-transform ${isFlipped ? 'rotate-y-180' : ''}`} style={{ transformStyle: "preserve-3d", transform: isFlipped ? "rotateY(180deg)" : "rotateY(0deg)" }}>
-              <div className="absolute inset-0 bg-slate-900 border-2 border-slate-700 rounded-2xl flex items-center justify-center p-8 text-center" style={{ backfaceVisibility: "hidden" }}>
-                 <h3 className="text-2xl font-bold text-white">{current?.front}</h3>
-                 <p className="absolute bottom-4 text-xs text-slate-500 uppercase tracking-widest">Tap to Flip</p>
-              </div>
-              <div className="absolute inset-0 bg-emerald-950 border-2 border-emerald-500/50 rounded-2xl flex items-center justify-center p-8 text-center" style={{ backfaceVisibility: "hidden", transform: "rotateY(180deg)" }}>
-                 <h3 className="text-xl font-medium text-emerald-100">{current?.back}</h3>
-              </div>
-           </div>
-        </div>
-        <div className="flex gap-4 mt-8 justify-center">
-           <button onClick={() => handleSwipe(false)} className="px-8 py-4 rounded-full bg-slate-800 text-slate-300 font-bold w-1/2 hover:bg-red-900/20 hover:text-red-200 transition-all border border-transparent hover:border-red-500/30">Still Learning</button>
-           <button onClick={() => handleSwipe(true)} className="px-8 py-4 rounded-full bg-emerald-600 text-white font-bold w-1/2 hover:bg-emerald-500 transition-all shadow-lg hover:shadow-emerald-500/20">Mastered</button>
-        </div>
-        <button onClick={onClose} className="mt-8 text-slate-500 hover:text-white block mx-auto transition-colors">Exit Study Mode</button>
+    <div ref={containerRef} className="min-h-screen bg-[#070A0F] text-white overflow-x-hidden">
+      {/* Animated Background */}
+      <motion.div 
+        style={{ y: backgroundY }}
+        className="fixed inset-0 pointer-events-none"
+      >
+        <div className="absolute inset-0 opacity-[0.65]" style={{ 
+          background: "radial-gradient(1200px 600px at 70% 20%, rgba(99,102,241,0.22), transparent 55%), radial-gradient(900px 520px at 20% 80%, rgba(16,185,129,0.16), transparent 58%)" 
+        }} />
+        <div className="absolute inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:42px_42px] opacity-[0.08]" />
+      </motion.div>
+
+      {/* Floating Orbs */}
+      <div className="fixed inset-0 pointer-events-none overflow-hidden">
+        <motion.div
+          animate={{ 
+            x: [0, 100, 0],
+            y: [0, -50, 0],
+          }}
+          transition={{ duration: 20, repeat: Infinity, ease: "linear" }}
+          className="absolute top-1/4 left-1/4 w-96 h-96 bg-indigo-500/10 rounded-full blur-[100px]"
+        />
+        <motion.div
+          animate={{ 
+            x: [0, -80, 0],
+            y: [0, 80, 0],
+          }}
+          transition={{ duration: 25, repeat: Infinity, ease: "linear" }}
+          className="absolute bottom-1/4 right-1/4 w-80 h-80 bg-emerald-500/10 rounded-full blur-[100px]"
+        />
       </div>
-    </div>
-  );
-}
 
-// --- UTILS ---
-function debounce(fn: any, wait = 1000) {
-  let t: any;
-  return (...args: any) => {
-    clearTimeout(t);
-    t = setTimeout(() => fn(...args), wait);
-  };
-}
-
-
-// --- MAIN PAGE ---
-export default function Page() {
-  const updateFromStorage = useLoominStore((s: any) => s.updateFromStorage);
-  const journals = useLoominStore((s: any) => s.journals);
-  const activeId = useLoominStore((s: any) => s.activeId);
-  const setEditorValue = useLoominStore((s: any) => s.setEditorValue);
-  const setVars = useLoominStore((s: any) => s.setVars);
-
-  const [navOpen, setNavOpen] = useState(false);
-  const [showUploadModal, setShowUploadModal] = useState(false);
-  
-  // AI & Sim State
-  const [simStatus, setSimStatus] = useState("OPTIMAL");
-  const [simMessage, setSimMessage] = useState("");
-  const [recommendation, setRecommendation] = useState("");
-  const [explanation, setExplanation] = useState("");
-  const [isAutoFixing, setIsAutoFixing] = useState(false);
-  const [isAskOpen, setIsAskOpen] = useState(false);
-  const [askPrompt, setAskPrompt] = useState("");
-  const [isSimEnabled, setIsSimEnabled] = useState(true);
-  
-  const [isStudyMode, setIsStudyMode] = useState(false);
-  const [flashcards, setFlashcards] = useState<any[]>([]);
-  const [deckLoading, setDeckLoading] = useState(false);
-  const [cardCount, setCardCount] = useState(5);
-
-  // Video State - now synced per journal
-  const [isVideoAnalyzing, setIsVideoAnalyzing] = useState(false);
-  const [isFullscreen, setIsFullscreen] = useState(false);
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const setVideo = useLoominStore((s: any) => s.setVideo);
-
-  const active = useMemo(() => journals.find((j: any) => j.id === activeId) || journals[0], [journals, activeId]);
-  const editorValue = active?.editorValue ?? "";
-  const vars = active?.vars ?? {};
-  const videoSrc = active?.videoSrc ?? null;
-
-  const debouncedRef = useRef<any>(null);
-
-  useEffect(() => {
-    updateFromStorage();
-  }, [updateFromStorage]);
-
-  // --- BRAIN: Simulation Engine ---
-  const runSimulation = async (code: string) => {
-    if (!isSimEnabled || !code || code.length < 5) return;
-    try {
-        const res = await fetch("/api/extract", { method: "POST", body: JSON.stringify({ notes: code }) });
-        const data = await res.json();
-        const sim = data.simulation || {};
-        const extraction = data.extraction || {};
-        
-        setSimStatus(sim.status || "OPTIMAL");
-        setSimMessage(sim.message || "");
-        setRecommendation(sim.recommendation || "");
-        setExplanation(sim.aiExplanation || "");
-
-        // --- SMART PARSER INTEGRATION ---
-        // Extract variables from natural text OR standard variables
-        const newVars = extractVariablesFromText(code);
-        
-        // Auto-Switch Scene based on detected topic
-        // ONLY if Scene_Mode wasn't explicitly set by the user
-        // Scene_Mode >= 2 means user wants a specific generic visualization
-        const userSetSceneMode = newVars.Scene_Mode !== undefined && newVars.Scene_Mode >= 2;
-        
-        if (!userSetSceneMode) {
-            if (extraction.topic === 'robot_arm') {
-                newVars.Scene_Mode = 1;
-            } else if (extraction.topic === 'wind_turbine') {
-                newVars.Scene_Mode = 0;
-            } else if (extraction.topic === 'motherboard' || extraction.topic === 'circuit' || 
-                       extraction.topic === 'mechanical' || extraction.topic === 'solar' || 
-                       extraction.topic === 'engine' || extraction.topic === 'generic') {
-                newVars.Scene_Mode = 2;
-            }
-        }
-
-        // Apply Extracted Vars to Partner's Store
-        setVars(newVars);
-
-    } catch (e) { console.error("Sim error", e); }
-  };
-
-  const onEditorChange = useMemo(() => {
-    const handler = (value: string | undefined) => {
-      const v = value ?? "";
-      // Instant Visual Update (Smart Parse)
-      const parsedVars = extractVariablesFromText(v);
-      setEditorValue(v);
-      setVars(parsedVars);
-      // Run Sim
-      runSimulation(v);
-    };
-    debouncedRef.current = debounce(handler, 1000); 
-    return (value: string | undefined) => {
-        const v = value ?? "";
-        setEditorValue(v); 
-        setVars(extractVariablesFromText(v)); // Immediate visual update
-        debouncedRef.current?.(v);
-    };
-  }, [setEditorValue, setVars, isSimEnabled]);
-
-  // --- SMART AUTO-FIX ---
-  // Updates existing parameters IN-PLACE with inline comments showing what changed
-  const handleAutoFix = () => {
-    setIsAutoFixing(true);
-    let updatedCode = editorValue;
-    const changes: string[] = [];
-    
-    // Parse recommendation for specific fixes
-    const windMatch = recommendation.match(/wind_speed.*?(\d+)/i);
-    const bladeMatch = recommendation.match(/blade_count.*?(\d+)/i);
-    const payloadMatch = recommendation.match(/payload.*?(\d+)/i);
-    
-    // Helper: Replace parameter in various formats with inline change comment
-    const replaceParam = (
-      code: string, 
-      patterns: RegExp[], 
-      newVal: string, 
-      paramName: string
-    ): { code: string; oldVal: string | null } => {
-      let oldVal: string | null = null;
-      let modified = code;
-      
-      for (const pattern of patterns) {
-        const match = code.match(pattern);
-        if (match) {
-          oldVal = match[1];
-          // Replace with new value and add change comment
-          modified = code.replace(pattern, `${paramName} = ${newVal}  // ✏️ changed from ${oldVal}`);
-          break;
-        }
-      }
-      
-      return { code: modified, oldVal };
-    };
-    
-    // Fix wind speed - match various formats
-    if (windMatch) {
-      const newVal = windMatch[1];
-      const windPatterns = [
-        /[Ww]ind[_\s]*[Ss]peed\s*=\s*(\d+)(?:\s*(?:mph|m\/s|kmh)?)?/,
-        /[Vv]elocity\s*=\s*(\d+)/,
-      ];
-      const result = replaceParam(updatedCode, windPatterns, newVal, 'Wind_Speed');
-      if (result.oldVal) {
-        updatedCode = result.code;
-        changes.push(`Wind_Speed: ${result.oldVal} → ${newVal} (safer for blade stress)`);
-      } else {
-        // No existing param found, add it
-        updatedCode += `\nWind_Speed = ${newVal}  // ✏️ added by auto-fix`;
-        changes.push(`Wind_Speed: added ${newVal}`);
-      }
-    }
-    
-    // Fix blade count - match various formats
-    if (bladeMatch) {
-      const newVal = bladeMatch[1];
-      const bladePatterns = [
-        /[Bb]lade[_\s]*[Cc]ount\s*=\s*(\d+)/,
-        /[Nn]umber\s*of\s*[Bb]lades\s*=\s*(\d+)/,
-        /[Bb]lades\s*=\s*(\d+)/,
-      ];
-      const result = replaceParam(updatedCode, bladePatterns, newVal, 'Blade_Count');
-      if (result.oldVal) {
-        updatedCode = result.code;
-        changes.push(`Blade_Count: ${result.oldVal} → ${newVal} (reduces drag)`);
-      } else {
-        updatedCode += `\nBlade_Count = ${newVal}  // ✏️ added by auto-fix`;
-        changes.push(`Blade_Count: added ${newVal}`);
-      }
-    }
-    
-    // Fix payload
-    if (payloadMatch) {
-      const newVal = payloadMatch[1];
-      const payloadPatterns = [
-        /[Pp]ayload\s*=\s*(\d+)/,
-        /[Ww]eight\s*=\s*(\d+)/,
-        /[Ll]oad\s*=\s*(\d+)/,
-      ];
-      const result = replaceParam(updatedCode, payloadPatterns, newVal, 'Payload');
-      if (result.oldVal) {
-        updatedCode = result.code;
-        changes.push(`Payload: ${result.oldVal} → ${newVal} kg (within torque limit)`);
-      } else {
-        updatedCode += `\nPayload = ${newVal}  // ✏️ added by auto-fix`;
-        changes.push(`Payload: added ${newVal}`);
-      }
-    }
-    
-    // Add a brief fix summary at top (not a huge block)
-    const fixSummary = `// 🔧 AUTO-FIX: ${changes.join(' | ')}
-// 📚 Why: ${simMessage.substring(0, 80)}${simMessage.length > 80 ? '...' : ''}
-
-`;
-    
-    const finalCode = fixSummary + updatedCode;
-    
-    setEditorValue(finalCode);
-    setVars(extractVariablesFromText(finalCode));
-    runSimulation(finalCode);
-    
-    setTimeout(() => setIsAutoFixing(false), 800);
-  };
-
-  const handleAskLoomin = async () => {
-    const promptHeader = `\n// ??? ASK LOOMIN: ${askPrompt}\n// -------------------------\n`;
-    try {
-        const res = await fetch('/api/ask', { method: 'POST', body: JSON.stringify({ prompt: askPrompt, context: editorValue }) });
-        const data = await res.json();
-        const newCode = promptHeader + data.result + "\n\n" + editorValue;
-        
-        setEditorValue(newCode);
-        setVars(extractVariablesFromText(newCode));
-        setIsAskOpen(false); 
-        setAskPrompt("");
-        runSimulation(newCode);
-    } catch(e) {}
-  };
-
-  // --- VIDEO ANALYSIS ---
-  const handleVideoUpload = async (e: any) => {
-      const file = e.target.files[0];
-      if (file) {
-          const url = URL.createObjectURL(file);
-          setVideo(url); // Store in journal state
-          setIsVideoAnalyzing(true);
+      {/* Navigation */}
+      <nav className="fixed top-0 left-0 right-0 z-50 backdrop-blur-md bg-[#070A0F]/80 border-b border-white/5">
+        <div className="max-w-7xl mx-auto px-6 py-4 flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-xl bg-white/10 ring-1 ring-white/15 backdrop-blur-md flex items-center justify-center">
+              <div className="h-4 w-4 rounded-sm bg-gradient-to-br from-indigo-400 via-fuchsia-300 to-emerald-300 opacity-95" />
+            </div>
+            <span className="text-lg font-semibold tracking-tight">Loomin</span>
+          </div>
           
-          try {
-              // Call the analyze_document API for real analysis
-              const formData = new FormData();
-              formData.append('file', file);
-              formData.append('fileName', file.name);
-              formData.append('fileType', 'video');
+          <a 
+            href="/auth/login?returnTo=/dashboard"
+            className="px-5 py-2 rounded-lg bg-white/10 hover:bg-white/20 border border-white/10 hover:border-white/20 text-sm font-medium transition-all"
+          >
+            Log In
+          </a>
+        </div>
+      </nav>
 
-              const response = await fetch('/api/analyze_document', {
-                  method: 'POST',
-                  body: formData,
-              });
+      {/* Hero Section */}
+      <section className="relative min-h-screen flex items-center justify-center px-6">
+        <motion.div 
+          style={{ opacity }}
+          className="text-center max-w-4xl mx-auto pt-20"
+        >
+          {/* Badge */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.5 }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-white/5 border border-white/10 mb-8"
+          >
+            <Sparkles className="w-4 h-4 text-indigo-400" />
+            <span className="text-sm text-white/70">AI-Powered Learning Platform</span>
+          </motion.div>
 
-              const result = await response.json();
-              setIsVideoAnalyzing(false);
+          {/* Main Headline with Typewriter */}
+          <h1 className="text-5xl md:text-7xl font-bold mb-6 leading-tight">
+            <TypewriterText 
+              text="Loomin is the future of learning." 
+              className="bg-gradient-to-r from-white via-white to-white/60 bg-clip-text text-transparent"
+              speed={60}
+              delay={300}
+            />
+          </h1>
 
-              if (result.generatedNotes) {
-                  setEditorValue(result.generatedNotes);
-                  setVars(result.suggestedVars || {});
-                  runSimulation(result.generatedNotes);
-              }
-          } catch (err) {
-              console.error('Video analysis error:', err);
-              setIsVideoAnalyzing(false);
-              // Fallback to basic analysis
-              const analysisNote = `## 🎥 Video Analysis: ${file.name}
+          {/* Subtitle */}
+          <motion.p
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 3, duration: 0.8 }}
+            className="text-lg md:text-xl text-white/50 max-w-2xl mx-auto mb-12"
+          >
+            Transform your notes into interactive 3D simulations. 
+            Learn complex concepts through AI-powered visualizations and smart flashcards.
+          </motion.p>
 
-### Overview
-Video uploaded for analysis. Add notes below to configure the simulation.
-
----
-
-### Simulation Parameters
-Wind_Speed = 25
-Blade_Count = 3
-Scene_Mode = 0
-`;
-              setEditorValue(analysisNote);
-              setVars({ Wind_Speed: 25, Blade_Count: 3, Scene_Mode: 0 });
-              runSimulation(analysisNote);
-          }
-      }
-  };
-
-  const generateDeck = async () => {
-    setDeckLoading(true);
-    const res = await fetch('/api/flashcards', { method: 'POST', body: JSON.stringify({ notes: editorValue, count: cardCount }) });
-    const data = await res.json();
-    setFlashcards(data.cards || []);
-    setDeckLoading(false);
-    setIsStudyMode(true);
-  };
-
-  // Handle document upload completion
-  const handleUploadComplete = (result: any) => {
-    if (!result) return;
-    
-    // Set the generated notes in the editor
-    if (result.generatedNotes) {
-      setEditorValue(result.generatedNotes);
-      setVars(result.suggestedVars || {});
-      runSimulation(result.generatedNotes);
-    }
-    
-    // Set video if uploaded - stored per journal
-    if (result.videoUrl) {
-      setVideo(result.videoUrl);
-    }
-  };
-
-  // Create new journal with upload prompt
-  const createJournalWithUpload = useLoominStore((s: any) => s.createJournal);
-  const handleNewJournal = () => {
-    createJournalWithUpload(`Journal ${journals.length + 1}`);
-    setShowUploadModal(true);
-  };
-
-  return (
-    <div className="h-[100vh] overflow-hidden bg-[#070A0F] text-white selection:bg-white/20 font-sans">
-      <style>{`
-        .loomin-scroll{scrollbar-gutter:stable}
-        .loomin-scroll::-webkit-scrollbar{width:10px}
-        .loomin-scroll::-webkit-scrollbar-track{background:rgba(255,255,255,0.04);border-radius:999px}
-        .loomin-scroll::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.14);border:2px solid rgba(0,0,0,0);background-clip:padding-box;border-radius:999px}
-        .loomin-scroll::-webkit-scrollbar-thumb:hover{background:rgba(255,255,255,0.20);border:2px solid rgba(0,0,0,0);background-clip:padding-box}
-      `}</style>
-
-      {isStudyMode && <FlashcardMode initialCards={flashcards} onClose={() => setIsStudyMode(false)} />}
-      
-      <UploadModal 
-        isOpen={showUploadModal} 
-        onClose={() => setShowUploadModal(false)} 
-        onComplete={handleUploadComplete}
-      />
-
-      <div className="pointer-events-none fixed inset-0 opacity-[0.65]" style={{ background: "radial-gradient(1200px 600px at 70% 20%, rgba(99,102,241,0.22), transparent 55%), radial-gradient(900px 520px at 20% 80%, rgba(16,185,129,0.16), transparent 58%)" }} />
-      <div className="pointer-events-none fixed inset-0 bg-[linear-gradient(to_right,rgba(255,255,255,0.05)_1px,transparent_1px),linear-gradient(to_bottom,rgba(255,255,255,0.05)_1px,transparent_1px)] bg-[size:42px_42px] opacity-[0.08]" />
-
-      <div className="relative mx-auto h-full max-w-[1800px] px-4 py-4 grid grid-cols-[200px,1fr] gap-3">
-        {/* LEFT SIDEBAR - Journals */}
-        <JournalsNav open={navOpen} onToggle={() => setNavOpen((v) => !v)} onNewJournal={handleNewJournal} />
-
-        {/* MAIN CONTENT AREA */}
-        <div className="min-h-0 grid grid-rows-[auto,1fr] gap-3">
-          <header className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <div className="h-9 w-9 rounded-xl bg-white/10 ring-1 ring-white/15 backdrop-blur-md flex items-center justify-center">
-                <div className="h-4 w-4 rounded-sm bg-gradient-to-br from-indigo-400 via-fuchsia-300 to-emerald-300 opacity-95" />
-              </div>
-              <div className="leading-tight">
-                <div className="text-sm tracking-[0.18em] uppercase text-white/55">Loomin</div>
-                <div className="text-[15px] font-semibold text-white/92">{active?.name ?? "Journal"}</div>
-              </div>
-            </div>
-
-            {/* CONTROLS */}
-            <div className="flex items-center gap-2">
-                <button onClick={() => setShowUploadModal(true)} className="flex items-center gap-2 px-3 py-1.5 bg-purple-600/20 hover:bg-purple-600/40 border border-purple-500/30 rounded-lg text-sm text-purple-200 transition-all">
-                    <FileUp className="w-3.5 h-3.5" />
-                    Upload
-                </button>
-
-                <button onClick={() => setIsAskOpen(!isAskOpen)} className="flex items-center gap-2 px-3 py-1.5 bg-indigo-600/20 hover:bg-indigo-600/40 border border-indigo-500/30 rounded-lg text-sm text-indigo-200 transition-all">
-                    <Sparkles className="w-3.5 h-3.5" />
-                    Ask AI
-                </button>
-                
-                <div className="flex items-center gap-1 bg-white/5 rounded-lg p-1 border border-white/10">
-                    <button onClick={generateDeck} disabled={deckLoading} className="flex items-center gap-2 px-3 py-1 bg-emerald-600/20 hover:bg-emerald-600/40 text-emerald-300 rounded text-xs transition-all border border-transparent hover:border-emerald-500/30">
-                        <BookOpen className="w-3 h-3" />
-                        {deckLoading ? "..." : "Study"}
-                    </button>
-                </div>
-
-                <button onClick={() => setIsSimEnabled(!isSimEnabled)} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border transition-all ${isSimEnabled ? 'bg-emerald-900/50 border-emerald-500/50 text-emerald-300' : 'bg-slate-800 border-slate-600 text-slate-400'}`}>
-                    {isSimEnabled ? <PlayCircle className="w-4 h-4" /> : <PauseCircle className="w-4 h-4" />}
-                    <span className="text-xs font-bold">{isSimEnabled ? "LIVE" : "PAUSED"}</span>
-                </button>
-            </div>
-
-            {/* Status Indicator */}
-            <div className="hidden md:flex items-center gap-2 rounded-2xl bg-white/6 ring-1 ring-white/12 px-3 py-2 backdrop-blur-md">
-              <div className={`h-2 w-2 rounded-full shadow-[0_0_18px_rgba(52,211,153,0.55)] transition-colors ${simStatus === 'CRITICAL_FAILURE' ? 'bg-red-500 animate-pulse' : 'bg-emerald-400/90'}`} />
-              <div className={`text-xs ${simStatus === 'CRITICAL_FAILURE' ? 'text-red-300' : 'text-white/65'}`}>{simStatus === 'CRITICAL_FAILURE' ? 'Error Detected' : 'System Ready'}</div>
-            </div>
-          </header>
-
-          <div className="min-h-0 grid grid-cols-12 gap-3">
-            
-            {/* LEFT COLUMN - Editor (larger) */}
-            <motion.section 
-               animate={{ gridColumn: isSimEnabled ? "span 7" : "span 12" }} 
-               className={`min-h-0 flex flex-col gap-3 ${isSimEnabled ? 'col-span-7' : 'col-span-12'}`}
+          {/* CTA Button */}
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 3.5, duration: 0.5 }}
+          >
+            <a
+              href="/auth/login?returnTo=/dashboard"
+              className="group relative inline-flex items-center gap-3 px-8 py-4 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-lg font-semibold transition-all duration-300 shadow-lg shadow-indigo-500/25 hover:shadow-xl hover:shadow-indigo-500/30"
             >
+              <span>TRY LOOMIN</span>
+              <motion.span
+                animate={{ x: [0, 5, 0] }}
+                transition={{ duration: 1.5, repeat: Infinity }}
+              >
+                →
+              </motion.span>
               
-              <AnimatePresence>
-                  {isAskOpen && (
-                    <motion.div initial={{opacity:0, height:0}} animate={{opacity:1, height:'auto'}} exit={{opacity:0, height:0}} className="overflow-hidden">
-                        <div className="bg-indigo-950/30 border border-indigo-500/30 rounded-xl p-2 flex gap-2">
-                            <input autoFocus className="flex-1 bg-transparent border-none outline-none text-sm px-2 placeholder:text-indigo-300/30 text-white" placeholder="Ex: Optimize for high wind..." value={askPrompt} onChange={(e)=>setAskPrompt(e.target.value)} onKeyDown={(e)=>e.key==='Enter' && handleAskLoomin()} />
-                            <button onClick={handleAskLoomin} className="px-3 py-1 bg-indigo-500 hover:bg-indigo-400 rounded text-xs font-bold transition-colors">Go</button>
-                        </div>
-                    </motion.div>
-                  )}
-              </AnimatePresence>
+              {/* Glow effect */}
+              <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 blur-xl opacity-50 group-hover:opacity-70 transition-opacity -z-10" />
+            </a>
+          </motion.div>
 
-              {/* VIDEO ANALYZER */}
-              <div className={`rounded-3xl bg-white/[0.055] ring-1 ring-white/12 backdrop-blur-xl overflow-hidden flex flex-col transition-all duration-300 ${isFullscreen ? 'fixed inset-4 z-[100]' : 'h-[28%] min-h-[140px]'}`}>
-                <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-                  <div className="text-sm font-semibold text-white/90">Video / Media</div>
-                  <div className="flex gap-3 items-center">
-                      <label className="cursor-pointer text-xs flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-all">
-                          <Upload className="w-3.5 h-3.5" />
-                          Upload
-                          <input type="file" accept="video/*,.mp4,.webm,.mov" className="hidden" onChange={handleVideoUpload} />
-                      </label>
-                      <button 
-                        onClick={() => setIsFullscreen(!isFullscreen)} 
-                        className="p-1.5 rounded-lg bg-white/5 hover:bg-white/10 text-white/60 hover:text-white transition-all"
-                        title={isFullscreen ? "Exit Fullscreen" : "Fullscreen"}
-                      >
-                          {isFullscreen ? <Minimize2 className="w-4 h-4" /> : <Maximize2 className="w-4 h-4" />}
-                      </button>
-                  </div>
-                </div>
-                <div className="flex-1 min-h-0 p-3 relative">
-                  {isVideoAnalyzing && (
-                      <div className="absolute inset-0 z-20 bg-black/90 flex flex-col items-center justify-center rounded-2xl">
-                          <div className="w-10 h-10 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin mb-3" />
-                          <p className="text-sm text-indigo-300 animate-pulse">Analyzing Video Content...</p>
-                          <p className="text-xs text-white/40 mt-1">Generating lecture notes & simulation</p>
-                      </div>
-                  )}
-                  <div className="relative h-full rounded-2xl overflow-hidden bg-black ring-1 ring-white/10">
-                    {videoSrc ? (
-                        <video 
-                          ref={videoRef}
-                          className={`w-full h-full ${isFullscreen ? 'object-contain' : 'object-cover'}`} 
-                          controls 
-                          playsInline 
-                          src={videoSrc}
-                          style={{ maxHeight: isFullscreen ? 'calc(100vh - 120px)' : '100%' }}
-                        />
-                    ) : (
-                        <div className="h-full flex flex-col items-center justify-center text-white/30 gap-2">
-                          <Upload className="w-8 h-8 text-white/20" />
-                          <p className="text-sm">Drop a video or click Upload</p>
-                          <p className="text-xs text-white/20">Supports MP4, WebM, MOV</p>
-                        </div>
-                    )}
-                  </div>
-                </div>
-              </div>
+          {/* Scroll indicator */}
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 4.5 }}
+            className="absolute bottom-10 left-1/2 -translate-x-1/2"
+          >
+            <motion.div
+              animate={{ y: [0, 10, 0] }}
+              transition={{ duration: 2, repeat: Infinity }}
+              className="w-6 h-10 rounded-full border-2 border-white/20 flex items-start justify-center p-2"
+            >
+              <motion.div className="w-1.5 h-1.5 rounded-full bg-white/50" />
+            </motion.div>
+          </motion.div>
+        </motion.div>
+      </section>
 
-              {/* EDITOR */}
-              <div className="flex-1 min-h-0 rounded-3xl bg-white/[0.055] ring-1 ring-white/12 backdrop-blur-xl shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_30px_90px_rgba(0,0,0,0.55)] overflow-hidden grid grid-rows-[auto,1fr]">
-                <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-                  <div className="text-sm font-semibold text-white/90">Editor</div>
-                  <div className="text-xs text-white/55">Live Config</div>
-                </div>
-                <div className="min-h-0 p-2 relative">
-                    <div className="h-full overflow-hidden rounded-2xl ring-1 ring-white/10 bg-[#0B1020]/70">
-                    <Monaco
-                        theme="vs-dark"
-                        language="markdown"
-                        value={editorValue}
-                        onChange={onEditorChange}
-                        options={{ 
-                          minimap: { enabled: false }, 
-                          fontSize: 13, 
-                          lineHeight: 20, 
-                          padding: { top: 14, bottom: 14 }, 
-                          smoothScrolling: true,
-                          wordWrap: "on",
-                          wrappingIndent: "same",
-                          lineNumbers: "on"
-                        }}
-                    />
-                    </div>
-                </div>
-              </div>
-            </motion.section>
+      {/* Features Section */}
+      <section className="relative py-32 px-6">
+        <div className="max-w-6xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+            className="text-center mb-16"
+          >
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">
+              Powerful Features for{" "}
+              <span className="bg-gradient-to-r from-indigo-400 to-emerald-400 bg-clip-text text-transparent">
+                Modern Learners
+              </span>
+            </h2>
+            <p className="text-white/50 max-w-2xl mx-auto">
+              Everything you need to transform your study materials into interactive experiences.
+            </p>
+          </motion.div>
 
-            {/* RIGHT COLUMN (3D SANDBOX) */}
-            <AnimatePresence>
-                {isSimEnabled && (
-                    <motion.section 
-                        initial={{ opacity: 0, x: 20 }} 
-                        animate={{ opacity: 1, x: 0, gridColumn: "span 5" }} 
-                        exit={{ opacity: 0, x: 20, gridColumn: "span 0" }}
-                        className="min-h-0 col-span-5 relative h-full rounded-3xl bg-white/[0.055] ring-1 ring-white/12 backdrop-blur-xl shadow-[0_0_0_1px_rgba(255,255,255,0.04),0_30px_90px_rgba(0,0,0,0.55)] overflow-hidden grid grid-rows-[auto,1fr]"
-                    >
-                        <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-                          <div className="flex items-center gap-3">
-                            <div className="text-sm font-semibold text-white/90">3D Sandbox</div>
-                          </div>
-                          <div className="text-xs text-white/55">Interactive</div>
-                        </div>
-
-                        <div className="relative min-h-0">
-                          <Scene />
-                          
-                          <div className="pointer-events-none absolute right-4 top-4 flex items-center gap-2 rounded-2xl bg-white/10 ring-1 ring-white/15 px-3 py-2 backdrop-blur-xl z-10">
-                            <Leaf className="h-4 w-4 text-emerald-300/90" />
-                            <div className="text-xs font-semibold text-white/85">Sustainability</div>
-                          </div>
-
-                          <AnimatePresence>
-                            {simStatus === 'CRITICAL_FAILURE' && (
-                                <motion.div initial={{opacity:0, scale:0.9}} animate={{opacity:1, scale:1}} exit={{opacity:0, scale:0.9}} className="absolute top-16 left-8 z-50 w-80">
-                                    <div className="p-6 rounded-xl border bg-red-950/80 border-red-500/50 backdrop-blur-xl shadow-2xl">
-                                        <div className="flex items-center gap-2 mb-3">
-                                            <AlertTriangle className="w-5 h-5 text-red-400" />
-                                            <p className="text-lg font-mono font-bold text-red-400">CRITICAL_FAILURE</p>
-                                        </div>
-                                        <p className="text-xs text-red-100/80 mb-4 leading-relaxed">{explanation}</p>
-                                        <button onClick={handleAutoFix} disabled={isAutoFixing} className="w-full py-2.5 bg-red-600 hover:bg-red-500 text-white rounded-lg font-bold text-xs flex items-center justify-center gap-2 shadow-lg">
-                                            <Wrench className="w-3.5 h-3.5" />
-                                            {isAutoFixing ? "FIXING..." : "AUTO-FIX CODE"}
-                                        </button>
-                                    </div>
-                                </motion.div>
-                            )}
-                          </AnimatePresence>
-
-                          <AnimatePresence>
-                            {simStatus === 'OPTIMAL' && (
-                                <motion.div initial={{opacity:0}} animate={{opacity:1}} exit={{opacity:0}} className="absolute top-16 left-8 z-40 pointer-events-none">
-                                    <div className="px-4 py-2 rounded-xl border bg-emerald-950/40 border-emerald-500/30 backdrop-blur-md">
-                                        <div className="flex items-center gap-2">
-                                            <CheckCircle className="w-4 h-4 text-emerald-400" />
-                                            <p className="text-sm font-mono font-bold text-emerald-400">OPTIMAL</p>
-                                        </div>
-                                    </div>
-                                </motion.div>
-                            )}
-                          </AnimatePresence>
-                        </div>
-                    </motion.section>
-                )}
-            </AnimatePresence>
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <FeatureCard
+              icon={<Boxes className="w-6 h-6 text-indigo-400" />}
+              title="3D Simulations"
+              description="Turn your notes into real-time 3D visualizations. See wind turbines spin, robot arms move, and circuits light up."
+              delay={0}
+            />
+            <FeatureCard
+              icon={<Brain className="w-6 h-6 text-emerald-400" />}
+              title="AI-Powered Analysis"
+              description="Our AI reads your notes and automatically configures simulations with optimal parameters."
+              delay={0.1}
+            />
+            <FeatureCard
+              icon={<BookOpen className="w-6 h-6 text-fuchsia-400" />}
+              title="Smart Flashcards"
+              description="Generate flashcard decks from your notes instantly. Master concepts with spaced repetition."
+              delay={0.2}
+            />
+            <FeatureCard
+              icon={<Video className="w-6 h-6 text-amber-400" />}
+              title="Video Processing"
+              description="Upload lecture videos and let AI extract key concepts, generate notes, and create study materials."
+              delay={0.3}
+            />
+            <FeatureCard
+              icon={<Zap className="w-6 h-6 text-cyan-400" />}
+              title="Auto-Fix Engine"
+              description="Detected an error in your simulation? One click to automatically optimize parameters."
+              delay={0.4}
+            />
+            <FeatureCard
+              icon={<Sparkles className="w-6 h-6 text-rose-400" />}
+              title="Ask Loomin AI"
+              description="Have questions? Ask Loomin anything about your notes and get intelligent, contextual answers."
+              delay={0.5}
+            />
           </div>
         </div>
-      </div>
+      </section>
+
+      {/* Tech Stack Section */}
+      <section className="relative py-32 px-6 bg-white/[0.02]">
+        <div className="max-w-6xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+            className="text-center mb-16"
+          >
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">
+              Built with{" "}
+              <span className="bg-gradient-to-r from-fuchsia-400 to-indigo-400 bg-clip-text text-transparent">
+                Modern Technology
+              </span>
+            </h2>
+            <p className="text-white/50 max-w-2xl mx-auto">
+              Powered by cutting-edge tools and frameworks for the best learning experience.
+            </p>
+          </motion.div>
+
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            <TechBadge
+              icon={<Code2 className="w-5 h-5" />}
+              name="Next.js 14"
+              description="React Framework"
+              delay={0}
+            />
+            <TechBadge
+              icon={<Box className="w-5 h-5" />}
+              name="Three.js"
+              description="3D Graphics"
+              delay={0.05}
+            />
+            <TechBadge
+              icon={<Brain className="w-5 h-5" />}
+              name="Groq AI"
+              description="Fast Inference"
+              delay={0.1}
+            />
+            <TechBadge
+              icon={<Database className="w-5 h-5" />}
+              name="Prisma"
+              description="Database ORM"
+              delay={0.15}
+            />
+            <TechBadge
+              icon={<Palette className="w-5 h-5" />}
+              name="Tailwind CSS"
+              description="Styling"
+              delay={0.2}
+            />
+            <TechBadge
+              icon={<Layers className="w-5 h-5" />}
+              name="Framer Motion"
+              description="Animations"
+              delay={0.25}
+            />
+            <TechBadge
+              icon={<Cpu className="w-5 h-5" />}
+              name="React Three Fiber"
+              description="React 3D"
+              delay={0.3}
+            />
+            <TechBadge
+              icon={<Zap className="w-5 h-5" />}
+              name="Zustand"
+              description="State Management"
+              delay={0.35}
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* Preview Section */}
+      <section className="relative py-32 px-6">
+        <div className="max-w-7xl mx-auto">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+            className="text-center mb-16"
+          >
+            <h2 className="text-3xl md:text-4xl font-bold mb-4">
+              See It in{" "}
+              <span className="bg-gradient-to-r from-emerald-400 to-cyan-400 bg-clip-text text-transparent">
+                Action
+              </span>
+            </h2>
+            <p className="text-white/50 max-w-2xl mx-auto">
+              A glimpse into the Loomin experience.
+            </p>
+          </motion.div>
+
+          {/* App Preview - Full Dashboard Replica */}
+          <motion.div
+            initial={{ opacity: 0, y: 40 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.7 }}
+            className="relative rounded-3xl overflow-hidden border border-white/10 bg-[#070A0F] shadow-2xl shadow-black/50"
+          >
+            {/* Mock window chrome */}
+            <div className="flex items-center gap-2 px-4 py-3 border-b border-white/10 bg-white/[0.02]">
+              <div className="flex gap-1.5">
+                <div className="w-3 h-3 rounded-full bg-red-500/60" />
+                <div className="w-3 h-3 rounded-full bg-yellow-500/60" />
+                <div className="w-3 h-3 rounded-full bg-green-500/60" />
+              </div>
+              <div className="flex-1 text-center text-xs text-white/30">Loomin Dashboard - localhost:3000/dashboard</div>
+            </div>
+            
+            {/* Dashboard Content */}
+            <div className="relative p-4 min-h-[500px]">
+              {/* Background gradients like real dashboard */}
+              <div className="pointer-events-none absolute inset-0 opacity-[0.65]" style={{ background: "radial-gradient(800px 400px at 70% 20%, rgba(99,102,241,0.15), transparent 55%), radial-gradient(600px 350px at 20% 80%, rgba(16,185,129,0.12), transparent 58%)" }} />
+              
+              <div className="relative grid grid-cols-[180px,1fr] gap-3 h-full">
+                {/* Journals Sidebar */}
+                <div className="rounded-2xl bg-white/[0.04] ring-1 ring-white/10 p-3 backdrop-blur-sm">
+                  <div className="flex items-center gap-2 mb-4">
+                    <div className="h-7 w-7 rounded-lg bg-white/10 flex items-center justify-center">
+                      <div className="h-3 w-3 rounded-sm bg-gradient-to-br from-indigo-400 via-fuchsia-300 to-emerald-300" />
+                    </div>
+                    <span className="text-xs font-semibold text-white/80">Journals</span>
+                  </div>
+                  <div className="space-y-2">
+                    <div className="px-3 py-2 rounded-lg bg-emerald-500/20 border border-emerald-500/30">
+                      <div className="text-xs font-medium text-emerald-300">Wind Turbine Study</div>
+                    </div>
+                    <div className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
+                      <div className="text-xs text-white/60">Robot Arm Notes</div>
+                    </div>
+                    <div className="px-3 py-2 rounded-lg bg-white/5 hover:bg-white/10 transition-colors">
+                      <div className="text-xs text-white/60">Circuit Analysis</div>
+                    </div>
+                    <div className="mt-4 px-3 py-2 rounded-lg border border-dashed border-white/20 text-center">
+                      <div className="text-xs text-white/40">+ New Journal</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Main Content */}
+                <div className="grid grid-cols-12 gap-3">
+                  {/* Left Column - Video + Editor */}
+                  <div className="col-span-7 flex flex-col gap-3">
+                    {/* Header */}
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="h-7 w-7 rounded-lg bg-white/10 flex items-center justify-center">
+                          <div className="h-3 w-3 rounded-sm bg-gradient-to-br from-indigo-400 via-fuchsia-300 to-emerald-300" />
+                        </div>
+                        <div>
+                          <div className="text-[10px] tracking-widest uppercase text-white/50">Loomin</div>
+                          <div className="text-xs font-semibold text-white/90">Wind Turbine Study</div>
+                        </div>
+                      </div>
+                      <div className="flex gap-2">
+                        <div className="px-2 py-1 rounded bg-purple-600/20 border border-purple-500/30 text-[10px] text-purple-200">Upload</div>
+                        <div className="px-2 py-1 rounded bg-indigo-600/20 border border-indigo-500/30 text-[10px] text-indigo-200">Ask AI</div>
+                        <div className="px-2 py-1 rounded bg-emerald-900/50 border border-emerald-500/50 text-[10px] text-emerald-300">LIVE</div>
+                      </div>
+                    </div>
+
+                    {/* Video Panel */}
+                    <div className="rounded-2xl bg-white/[0.04] ring-1 ring-white/10 overflow-hidden h-[120px]">
+                      <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+                        <div className="text-[10px] font-semibold text-white/80">Video / Media</div>
+                        <div className="text-[10px] text-white/40">Upload</div>
+                      </div>
+                      <div className="h-full bg-black/50 flex items-center justify-center">
+                        <div className="text-center text-white/30">
+                          <div className="text-lg mb-1">Video Preview</div>
+                          <div className="text-[10px]">lecture.mp4</div>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Editor Panel */}
+                    <div className="flex-1 rounded-2xl bg-white/[0.04] ring-1 ring-white/10 overflow-hidden">
+                      <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+                        <div className="text-[10px] font-semibold text-white/80">Editor</div>
+                        <div className="text-[10px] text-white/40">Live Config</div>
+                      </div>
+                      <div className="p-3 font-mono text-[10px] leading-relaxed">
+                        <div className="text-indigo-400">## Wind Turbine Configuration</div>
+                        <div className="text-white/60 mt-2">Analyzing optimal blade parameters...</div>
+                        <div className="mt-2">
+                          <span className="text-emerald-400">Wind_Speed</span>
+                          <span className="text-white/50"> = </span>
+                          <span className="text-amber-400">25</span>
+                        </div>
+                        <div>
+                          <span className="text-emerald-400">Blade_Count</span>
+                          <span className="text-white/50"> = </span>
+                          <span className="text-amber-400">3</span>
+                        </div>
+                        <div>
+                          <span className="text-emerald-400">Blade_Pitch</span>
+                          <span className="text-white/50"> = </span>
+                          <span className="text-amber-400">15</span>
+                        </div>
+                        <div className="mt-2 text-white/40">// Efficiency: 94.2%</div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Right Column - 3D Sandbox */}
+                  <div className="col-span-5 rounded-2xl bg-white/[0.04] ring-1 ring-white/10 overflow-hidden flex flex-col">
+                    <div className="flex items-center justify-between px-3 py-2 border-b border-white/10">
+                      <div className="text-[10px] font-semibold text-white/80">3D Sandbox</div>
+                      <div className="text-[10px] text-white/40">Interactive</div>
+                    </div>
+                    <div className="flex-1 relative bg-gradient-to-br from-[#0a1628] to-[#0d1f35] flex items-center justify-center overflow-hidden">
+                      {/* Animated Wind Turbine */}
+                      <div className="relative">
+                        {/* Tower */}
+                        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 w-3 h-32 bg-gradient-to-t from-slate-600 to-slate-400 rounded-t-sm" />
+                        
+                        {/* Hub */}
+                        <div className="absolute bottom-32 left-1/2 -translate-x-1/2 w-6 h-6 bg-slate-300 rounded-full shadow-lg z-10" />
+                        
+                        {/* Rotating Blades */}
+                        <motion.div
+                          animate={{ rotate: 360 }}
+                          transition={{ duration: 3, repeat: Infinity, ease: "linear" }}
+                          className="absolute bottom-[122px] left-1/2 -translate-x-1/2 w-32 h-32"
+                          style={{ transformOrigin: "center center" }}
+                        >
+                          {/* Blade 1 */}
+                          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-16 bg-gradient-to-t from-slate-400 to-white rounded-full origin-bottom" />
+                          {/* Blade 2 */}
+                          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-16 bg-gradient-to-t from-slate-400 to-white rounded-full origin-bottom rotate-[120deg]" style={{ transformOrigin: "bottom center", transform: "translateX(-50%) rotate(120deg)" }} />
+                          {/* Blade 3 */}
+                          <div className="absolute top-0 left-1/2 -translate-x-1/2 w-2 h-16 bg-gradient-to-t from-slate-400 to-white rounded-full origin-bottom rotate-[240deg]" style={{ transformOrigin: "bottom center", transform: "translateX(-50%) rotate(240deg)" }} />
+                        </motion.div>
+
+                        {/* Ground */}
+                        <div className="absolute -bottom-4 left-1/2 -translate-x-1/2 w-40 h-8 bg-gradient-to-t from-emerald-900/50 to-transparent rounded-full blur-sm" />
+                      </div>
+
+                      {/* Status Badge */}
+                      <div className="absolute top-3 right-3 flex items-center gap-1.5 px-2 py-1 rounded-lg bg-white/10 ring-1 ring-white/15 backdrop-blur-sm">
+                        <div className="w-2 h-2 rounded-full bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.5)]" />
+                        <span className="text-[10px] text-white/70">Sustainability</span>
+                      </div>
+
+                      {/* Optimal Badge */}
+                      <div className="absolute top-12 left-3 px-2 py-1 rounded-lg bg-emerald-950/60 border border-emerald-500/30">
+                        <div className="flex items-center gap-1">
+                          <div className="w-2 h-2 rounded-full bg-emerald-400" />
+                          <span className="text-[10px] font-mono font-bold text-emerald-400">OPTIMAL</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Final CTA Section */}
+      <section className="relative py-32 px-6">
+        <div className="max-w-3xl mx-auto text-center">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.5 }}
+          >
+            <h2 className="text-4xl md:text-5xl font-bold mb-6">
+              Ready to Transform Your Learning?
+            </h2>
+            <p className="text-white/50 text-lg mb-10">
+              Join Loomin today and experience the future of interactive education.
+            </p>
+            <a
+              href="/auth/login?returnTo=/dashboard"
+              className="group relative inline-flex items-center gap-3 px-10 py-5 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 hover:from-indigo-500 hover:to-emerald-500 text-xl font-semibold transition-all duration-300 shadow-lg shadow-indigo-500/25 hover:shadow-xl hover:shadow-indigo-500/30"
+            >
+              <span>Get Started Free</span>
+              <motion.span
+                animate={{ x: [0, 5, 0] }}
+                transition={{ duration: 1.5, repeat: Infinity }}
+              >
+                →
+              </motion.span>
+              <div className="absolute inset-0 rounded-xl bg-gradient-to-r from-indigo-600 to-emerald-600 blur-xl opacity-50 group-hover:opacity-70 transition-opacity -z-10" />
+            </a>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* Footer */}
+      <footer className="relative py-12 px-6 border-t border-white/5">
+        <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <div className="h-8 w-8 rounded-lg bg-white/10 ring-1 ring-white/15 flex items-center justify-center">
+              <div className="h-3 w-3 rounded-sm bg-gradient-to-br from-indigo-400 via-fuchsia-300 to-emerald-300 opacity-95" />
+            </div>
+            <span className="text-sm text-white/50">Loomin - The Future of Learning</span>
+          </div>
+          <div className="text-sm text-white/30">
+            Built with Next.js, Three.js, and AI
+          </div>
+        </div>
+      </footer>
     </div>
   );
 }
