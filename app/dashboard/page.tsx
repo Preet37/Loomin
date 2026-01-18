@@ -17,7 +17,8 @@ function extractVariablesFromText(text: string) {
   
   // FIRST: Capture standard "Var = Val" format (most reliable for explicit params)
   // This ensures Scene_Mode = 2 is captured correctly
-  const standardRegex = /(?:^|\n)\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(-?\d+(?:\.\d+)?)/g;
+  // Also handles units like "100 kg" or "50 m/s"
+  const standardRegex = /(?:^|\n)\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(-?\d+(?:\.\d+)?)\s*(?:kg|lbs?|m\/s|mph|degrees?|%)?/g;
   let m;
   while ((m = standardRegex.exec(text)) !== null) {
      out[m[1]] = Number(m[2]);
@@ -262,10 +263,10 @@ export default function DashboardPage() {
     let updatedCode = editorValue;
     const changes: string[] = [];
     
-    // Parse recommendation for specific fixes
-    const windMatch = recommendation.match(/wind_speed.*?(\d+)/i);
+    // Parse recommendation for specific fixes (handle decimals)
+    const windMatch = recommendation.match(/wind_speed.*?(\d+\.?\d*)/i);
     const bladeMatch = recommendation.match(/blade_count.*?(\d+)/i);
-    const payloadMatch = recommendation.match(/payload.*?(\d+)/i);
+    const payloadMatch = recommendation.match(/payload.*?(\d+\.?\d*)/i);
     
     // Helper: Replace parameter in various formats with inline change comment
     const replaceParam = (
@@ -326,13 +327,13 @@ export default function DashboardPage() {
       }
     }
     
-    // Fix payload
+    // Fix payload - handle units like "kg", "lbs", etc.
     if (payloadMatch) {
-      const newVal = payloadMatch[1];
+      const newVal = Math.round(parseFloat(payloadMatch[1])).toString(); // Round to whole number
       const payloadPatterns = [
-        /[Pp]ayload\s*=\s*(\d+)/,
-        /[Ww]eight\s*=\s*(\d+)/,
-        /[Ll]oad\s*=\s*(\d+)/,
+        /[Pp]ayload\s*=\s*(\d+(?:\.\d+)?)\s*(?:kg|lbs?|pounds?)?/,
+        /[Ww]eight\s*=\s*(\d+(?:\.\d+)?)\s*(?:kg|lbs?|pounds?)?/,
+        /[Ll]oad\s*=\s*(\d+(?:\.\d+)?)\s*(?:kg|lbs?|pounds?)?/,
       ];
       const result = replaceParam(updatedCode, payloadPatterns, newVal, 'Payload');
       if (result.oldVal) {

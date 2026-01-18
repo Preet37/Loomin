@@ -124,7 +124,7 @@ function extractVariablesDirectly(notes: string): Record<string, number> {
     { key: 'wind_speed', regex: /[Ww]ind[_\s]*[Ss]peed\s*=\s*(\d+)/g },
     { key: 'blade_count', regex: /[Bb]lade[_\s]*[Cc]ount\s*=\s*(\d+)/g },
     { key: 'number_of_blades', regex: /[Nn]umber\s*of\s*[Bb]lades\s*=\s*(\d+)/g },
-    { key: 'payload', regex: /[Pp]ayload\s*=\s*(\d+)/g },
+    { key: 'payload', regex: /[Pp]ayload\s*=\s*(\d+(?:\.\d+)?)\s*(?:kg|lbs?|pounds?)?/g },
     { key: 'arm_length', regex: /[Aa]rm[_\s]*[Ll]ength\s*=\s*(\d+)/g },
   ];
   
